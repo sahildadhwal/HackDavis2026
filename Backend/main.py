@@ -1,5 +1,5 @@
 """
-PantryPal — AI-Powered Food Pantry Coordinator
+FridgeBridge — AI-Powered Food Pantry Coordinator
 HackDavis 2026
 
 Run:
@@ -51,7 +51,7 @@ ws_connections: dict = {}
 call_states: dict = {}
 
 # ─── App ──────────────────────────────────────────────────────────────────────
-app = FastAPI(title="PantryPal API")
+app = FastAPI(title="FridgeBridge API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
@@ -151,7 +151,7 @@ def parse_json(text: str):
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "PantryPal API"}
+    return {"status": "ok", "service": "FridgeBridge API"}
 
 
 @app.post("/api/analyze-fridge")

@@ -228,8 +228,11 @@ export function PantryPal() {
           call_results: callResults,
           user_location: location,
           selected_meal: selectedMeal !== null ? meals[selectedMeal]?.name : "",
+          user_has: ingredients,
         }),
       });
+
+      
       setPlan(await res.json());
       setStep(5);
     } catch {

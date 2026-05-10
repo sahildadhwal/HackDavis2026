@@ -406,7 +406,8 @@ async def twilio_gather_webhook(call_id: str, request: Request):
     state = call_states.get(call_id)
     if not state:
         resp = VoiceResponse()
-        resp.say("Thank you. Goodbye.")
+        resp.say("Thank you so much, I truly appreciate it. ")
+        resp.pause(length=5)
         resp.hangup()
         print(f">>> gather response XML: {str(resp)}", flush=True)
 
@@ -432,8 +433,7 @@ async def twilio_gather_webhook(call_id: str, request: Request):
 
     If any items are unavailable, the follow_up_message should ask when they expect a delivery or restock for those items. Be conversational and friendly."""}],
 
-        system="Analyze food pantry call. Return only JSON. For follow_up_message: sound natural and conversational, never repeat the full ingredient list, ask about restock/delivery if items unavailable, keep under 2 sentences, thank warmly if done."
-    )
+        system="Analyze food pantry call. Return only JSON. For follow_up_message: sound natural and conversational, never repeat the full ingredient list, ask about restock/delivery if items unavailable, keep under 2 sentences, thank warmly if done. IMPORTANT: set should_continue to false if the pantry has already answered about all ingredients, or if you have already asked about restock/delivery once. Never ask the same question twice."    )
 
 
     try:
@@ -488,14 +488,17 @@ async def twilio_status_callback(call_id: str, request: Request):
 async def optimize_plan(request: Request):
     body = await request.json()
     result = await call_claude(
-        [{"role": "user", "content": f"""Given food pantry results, create optimal pickup plan.
-        Meal: {body.get('selected_meal', '')}
-        Location: {body.get('user_location', '')}
-        Results: {json.dumps(body.get('call_results', []))}
-        Note: Only include ingredients in still_missing if they were NOT found at any pantry. Do not include ingredients the user already has at home.
-        Return ONLY JSON: {{"plan": [{{"pantry_name": "...", "address": "...", "items_to_get": [...], "visit_order": 1}}], "still_missing": [...], "recipe_modifications": "...", "summary": "..."}}"""}],
+        [{"role": "user", "content": 
+          f"""Given food pantry results, create optimal pickup plan.
+            Meal: {body.get('selected_meal', '')}
+            Location: {body.get('user_location', '')}
+            User already has at home: {json.dumps(body.get('user_has', []))}
+            Results: {json.dumps(body.get('call_results', []))}
+            Note: Only include ingredients in still_missing if they were NOT found at any pantry AND the user doesn't already have them at home.
+            Return ONLY JSON: {{"plan": [{{"pantry_name": "...", "address": "...", "items_to_get": [...], "visit_order": 1}}], "still_missing": [...], "recipe_modifications": "...", "summary": "..."}}"""
+        }],
         system="Logistics optimizer. Return only JSON."
-        )
+    )
     try:
         return parse_json(result)
     except:

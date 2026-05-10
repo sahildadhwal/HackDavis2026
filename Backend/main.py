@@ -384,6 +384,27 @@ async def twilio_status_callback(call_id: str, request: Request):
         await notify_ws(state["session_id"], {"type": "call_status", "call_id": call_id, "pantry": state["pantry"]["name"], "status": state["status"]})
     return HTMLResponse("OK")
 
+@app.post("/api/recipe-steps")
+async def recipe_steps(request: Request):
+    body = await request.json()
+    meal_name = body.get("meal_name", "")
+    have = body.get("have", [])
+    missing = body.get("missing", [])
+    time_minutes = body.get("time_minutes", 30)
+
+    result = await call_claude(
+        [{"role": "user", "content": f"""Provide detailed step-by-step cooking instructions for: {meal_name}
+Ingredients available: {json.dumps(have)}
+Missing ingredients (note substitutions if possible): {json.dumps(missing)}
+Return ONLY JSON: {{"steps": ["Step 1: ...", "Step 2: ..."], "tips": ["tip1", "tip2"], "servings": "2-4 servings"}}"""}],
+        system="Expert chef. Write clear, beginner-friendly numbered steps. Be specific with quantities and techniques. Return only JSON.",
+        max_tokens=1500,
+    )
+    try:
+        return parse_json(result)
+    except:
+        return {"steps": [result], "tips": [], "servings": "2-4 servings"}
+
 
 @app.post("/api/optimize-plan")
 async def optimize_plan(request: Request):

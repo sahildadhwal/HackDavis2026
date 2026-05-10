@@ -10,7 +10,7 @@ const PantryMap = dynamic(() => import("@/components/map/PantryMap").then(m => m
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const STAPLES = ["flour", "sugar", "salt", "pepper", "butter", "olive oil", "garlic", "onion", "rice", "pasta", "baking soda", "vanilla extract", "soy sauce", "vinegar"];
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 5;
 
 interface Meal {
   name: string;
@@ -80,6 +80,7 @@ export function FridgeBridge() {
   const [viewingMealIdx, setViewingMealIdx] = useState<number | null>(null);
   const [recipeDetail, setRecipeDetail] = useState<RecipeDetail | null>(null);
   const [loadingRecipe, setLoadingRecipe] = useState(false);
+  const [showAddInput, setShowAddInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -147,7 +148,8 @@ export function FridgeBridge() {
     }
   };
 
-  const suggestMeals = async () => {
+  const suggestMeals = useCallback(async () => {
+    if (ingredients.length === 0) return;
     setLoading(true);
     setError("");
     try {
@@ -158,12 +160,17 @@ export function FridgeBridge() {
       });
       const data = await res.json();
       setMeals(data.meals || []);
-      setStep(2);
     } catch {
       setError("Failed to get meal suggestions.");
     }
     setLoading(false);
-  };
+  }, [sessionId, ingredients, specificRequest]);
+
+  useEffect(() => {
+    if (step !== 1 || ingredients.length === 0) return;
+    const timer = setTimeout(suggestMeals, 800);
+    return () => clearTimeout(timer);
+  }, [suggestMeals, step]);
 
   const findPantries = async () => {
     if (!location.trim()) return;
@@ -178,7 +185,7 @@ export function FridgeBridge() {
       const data = await res.json();
       setPantries(data.pantries || []);
       setSelectedPantries(new Set(data.pantries?.map((_: Pantry, i: number) => i) || []));
-      setStep(3);
+      setStep(2);
     } catch {
       setError("Failed to find pantries.");
     }
@@ -202,7 +209,7 @@ export function FridgeBridge() {
     const selected = pantries.filter((_, i) => selectedPantries.has(i));
     if (selected.length === 0) return;
     setLoading(true);
-    setStep(4);
+    setStep(3);
     setCallStatuses({});
     const endpoint = demoMode ? "/api/demo/call-pantries" : "/api/call-pantries";
     try {
@@ -239,7 +246,7 @@ export function FridgeBridge() {
         }),
       });
       setPlan(await res.json());
-      setStep(5);
+      setStep(4);
     } catch {
       setError("Failed to generate plan.");
     }
@@ -279,122 +286,140 @@ export function FridgeBridge() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-50">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-green-800 to-green-900 px-5 py-6 text-white">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <span className="text-3xl">🥫</span> FridgeBridge
-        </h1>
-        <p className="text-green-200 text-sm mt-1">AI-powered food pantry coordinator</p>
-      </header>
+    <div className="min-h-screen" style={{ backgroundColor: "#FCEEAD" }}>
+      {/* ─── STEP 0: Landing page ─── */}
+      {step === 0 && (
+        <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
+          {/* Bottom-left plants */}
+          <img src="/flower2.png" alt="" className="absolute bottom-0 left-0 w-64 h-auto pointer-events-none select-none" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          <img src="/flower3.png" alt="" className="absolute bottom-0 left-0 w-60 h-auto pointer-events-none select-none" style={{ transform: "rotate(25deg) translateX(30%)" }} />
 
-      {/* Progress bar */}
-      <div className="flex gap-1.5 px-5 py-3 bg-white border-b border-neutral-100 sticky top-0 z-10">
-        {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
-          <div key={i} className={`flex-1 h-1 rounded-full transition-colors ${i === step ? "bg-green-500" : i < step ? "bg-green-700" : "bg-neutral-200"}`} />
-        ))}
-      </div>
+          {/* Top-right plant */}
+          <img src="/flower4.png" alt="" className="absolute top-0 right-0 w-56 h-auto pointer-events-none select-none" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
 
-      {/* Content */}
-      <main className="max-w-lg mx-auto px-5 py-6 pb-24">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex justify-between">
-            {error}
-            <button onClick={() => setError("")} className="text-red-400 ml-2">×</button>
-          </div>
-        )}
+          {/* Bottom-right plant */}
+          <img src="/flower1.png" alt="" className="absolute bottom-0 right-0 w-72 h-auto pointer-events-none select-none" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
 
-        {/* ─── STEP 0: Scan fridge ─── */}
-        {step === 0 && (
-          <div className="animate-fade-up">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-1">Scan your fridge</h2>
-            <p className="text-sm text-neutral-500 mb-6">Take a photo of your fridge, pantry, or whatever food you have.</p>
+          {/* Main content */}
+          <div className="relative z-10 flex flex-col items-center text-center px-8">
+            <h1 className="mb-7 leading-none" style={{ fontSize: "clamp(2.8rem, 12vw, 5rem)", color: "#2d1f0e", fontFamily: "var(--font-krona)", letterSpacing: "-0.05em", WebkitTextStroke: "1.5px #2d1f0e" }}>
+              <span style={{ position: "relative", top: "-0.35em" }}>fridge</span>
+              <span>bridge</span>
+            </h1>
+
+            <p className="text-3xl mb-12 leading-tight" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)", letterSpacing: "-0.05em" }}>
+              snap your fridge. we&apos;ll find a meal<br />
+              and call nearby pantries for what&apos;s missing.
+            </p>
 
             <div
-              className={`border-2 border-dashed rounded-2xl cursor-pointer transition-all ${imagePreview ? "border-none p-0 overflow-hidden" : "border-neutral-300 hover:border-green-400 hover:bg-green-50 p-12 text-center bg-white"}`}
+              className="w-[32rem] h-80 rounded-3xl cursor-pointer flex items-center justify-center mb-10 transition-all hover:brightness-95 overflow-hidden border-2"
+              style={{ backgroundColor: "#b5af7a", borderColor: "#2d1f0e" }}
               onClick={() => fileInputRef.current?.click()}
             >
               {imagePreview ? (
-                <img src={imagePreview} alt="Fridge" className="w-full rounded-2xl" />
+                <img src={imagePreview} alt="Fridge" className="w-full h-full object-cover" />
               ) : (
-                <>
-                  <div className="text-5xl mb-3">📸</div>
-                  <div className="font-medium text-neutral-700">Tap to take a photo or upload</div>
-                  <div className="text-sm text-neutral-400 mt-1">JPG, PNG — snap your fridge or countertop</div>
-                </>
+                <svg width="52" height="46" viewBox="0 0 52 46" fill="none">
+                  <path d="M4 16h6l4-6h24l4 6h6a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V19a3 3 0 0 1 3-3z" stroke="#7a7550" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                  <circle cx="26" cy="28" r="8" stroke="#7a7550" strokeWidth="2.5" fill="none"/>
+                </svg>
               )}
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageSelect} className="hidden" />
 
-            {imagePreview && (
-              <button onClick={() => { setImage(null); setImagePreview(""); }} className="mt-3 w-full py-2.5 rounded-xl border border-neutral-200 bg-white text-sm font-medium text-neutral-600 hover:bg-neutral-50">
-                Retake photo
+            {imagePreview ? (
+              <div className="flex gap-3 w-72">
+                <button
+                  onClick={() => { setImage(null); setImagePreview(""); }}
+                  className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium bg-transparent hover:bg-white/30 transition-colors"
+                  style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)" }}
+                >
+                  retake
+                </button>
+                <button
+                  onClick={analyzeFridge}
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: "#2d1f0e", borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)" }}
+                >
+                  {loading ? "analyzing..." : "analyze →"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setSessionId(crypto.randomUUID()); setStep(1); }}
+                className="w-[32rem] py-2.5 rounded-full border-2 text-sm font-medium transition-colors"
+                style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}
+              >
+                or type what you have...
               </button>
             )}
-            <button onClick={analyzeFridge} disabled={!image || loading} className="mt-3 w-full py-4 rounded-2xl bg-green-600 text-white font-bold text-base disabled:bg-neutral-300 disabled:cursor-not-allowed hover:bg-green-700 transition-colors">
-              {loading ? "⏳ Analyzing..." : "Analyze my food"}
-            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ─── STEP 1: Edit ingredients ─── */}
-        {step === 1 && (
-          <div className="animate-fade-up">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-1">Your ingredients</h2>
-            <p className="text-sm text-neutral-500 mb-6">Add anything AI missed — especially pantry staples.</p>
+      {step === 1 && (
+        <div className="min-h-screen relative overflow-x-hidden">
+          {/* Plants */}
+          <img src="/flower2.png" alt="" className="fixed bottom-0 left-0 w-64 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          <img src="/flower3.png" alt="" className="fixed bottom-0 left-0 w-60 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(25deg) translateX(30%)" }} />
+          <img src="/flower4.png" alt="" className="fixed top-0 right-0 w-56 h-auto pointer-events-none select-none z-0" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
+          <img src="/flower1.png" alt="" className="fixed bottom-0 right-0 w-72 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
 
-            <div className="flex flex-wrap gap-2 mb-4">
+          <div className="relative z-10 max-w-2xl mx-auto px-6 py-8 animate-fade-up">
+            {/* Fridge photo */}
+            {imagePreview && (
+              <img src={imagePreview} alt="Fridge" className="w-full rounded-2xl mb-5 object-cover max-h-56 border-2" style={{ borderColor: "#2d1f0e" }} />
+            )}
+
+            {/* Ingredient pills */}
+            <div className="flex flex-wrap gap-2 mb-5">
               {ingredients.map((item, i) => (
-                <span key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-neutral-200 rounded-full text-sm animate-slide-in" style={{ animationDelay: `${i * 30}ms` }}>
+                <button key={i} onClick={() => removeIngredient(item)} className="px-3 py-1.5 rounded-full border-2 text-sm font-medium transition-colors hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>
                   {item}
-                  <button onClick={() => removeIngredient(item)} className="w-4 h-4 rounded-full bg-neutral-100 hover:bg-red-100 text-neutral-400 hover:text-red-500 text-xs flex items-center justify-center">×</button>
-                </span>
+                </button>
               ))}
+              {showAddInput ? (
+                <input
+                  autoFocus
+                  className="px-3 py-1.5 rounded-full border-2 text-sm focus:outline-none w-36"
+                  style={{ borderColor: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)", color: "#2d1f0e" }}
+                  placeholder="ingredient..."
+                  value={newIngredient}
+                  onChange={(e) => setNewIngredient(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { addIngredient(); setShowAddInput(false); } if (e.key === "Escape") setShowAddInput(false); }}
+                  onBlur={() => { addIngredient(); setShowAddInput(false); }}
+                />
+              ) : (
+                <button onClick={() => setShowAddInput(true)} className="px-3 py-1.5 rounded-full border-2 text-sm font-medium transition-colors hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>
+                  + add more
+                </button>
+              )}
             </div>
 
-            <div className="flex gap-2 mb-4">
-              <input className="flex-1 px-4 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-green-400" placeholder="Add an ingredient..." value={newIngredient} onChange={(e) => setNewIngredient(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addIngredient()} />
-              <button onClick={addIngredient} className="px-4 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700">Add</button>
-            </div>
-
+            {/* Quick add staples */}
             <div className="mb-5">
-              <div className="text-xs uppercase tracking-wider text-neutral-400 font-medium mb-2">Quick add pantry staples</div>
+              <div className="text-xl mb-2" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>quick add pantry staples</div>
               <div className="flex flex-wrap gap-1.5">
                 {STAPLES.map((s) => (
-                  <button key={s} onClick={() => toggleStaple(s)} className={`px-3 py-1 rounded-full text-xs border transition-colors ${addedStaples.has(s) ? "bg-green-100 border-green-400 text-green-700" : "bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-green-50"}`}>
+                  <button key={s} onClick={() => toggleStaple(s)} className="px-3 py-1 rounded-full border-2 text-xs font-medium transition-colors hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: addedStaples.has(s) ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.45)" }}>
                     {addedStaples.has(s) ? "✓ " : "+ "}{s}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 mb-5">
-              <label className="text-sm font-medium text-amber-600 mb-1 block">🍕 Want something specific?</label>
-              <input className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm focus:outline-none focus:border-amber-400 bg-white" placeholder='e.g., "pizza" or "something warm"' value={specificRequest} onChange={(e) => setSpecificRequest(e.target.value)} />
-            </div>
-
-            <button onClick={suggestMeals} disabled={ingredients.length === 0 || loading} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
-              {loading ? "⏳ Thinking..." : "What can I make?"}
-            </button>
-          </div>
-        )}
-
-        {/* ─── STEP 2: Meal suggestions ─── */}
-        {step === 2 && (
-          <div className="animate-fade-up">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-1">Meal ideas</h2>
-            <p className="text-sm text-neutral-500 mb-6">Pick a meal — we&apos;ll find the missing ingredients at pantries near you.</p>
-
-            {meals.map((meal, i) => (
-              <div key={i} onClick={() => setSelectedMeal(i)} className={`p-4 mb-3 rounded-2xl border cursor-pointer transition-all bg-white ${selectedMeal === i ? "border-green-500 bg-green-50 shadow-sm" : "border-neutral-100 hover:border-green-300"}`}>
-                <div className="font-bold text-lg">{selectedMeal === i ? "✓ " : ""}{meal.name}</div>
-                <div className="text-sm text-neutral-500 mt-0.5 mb-2">{meal.description}</div>
-                <div className="flex gap-3 text-xs text-neutral-400 mb-2">
-                  <span>⏱ {meal.time_minutes} min</span>
-                  <span>📊 {meal.difficulty}</span>
-                  <span className={meal.missing?.length > 0 ? "text-amber-500" : "text-green-600"}>
-                    {meal.missing?.length > 0 ? `Missing ${meal.missing.length}` : "✓ Have all!"}
-                  </span>
+            {/* Recipes */}
+            <div className="text-xl mb-3" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>recipes you can make</div>
+            {loading ? (
+              <div className="text-sm text-neutral-400 italic py-2">finding recipes...</div>
+            ) : meals.map((meal, i) => (
+              <div key={i} className="p-4 mb-2 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }}>
+                <div className="font-medium text-base mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
+                <div className="text-sm mb-2 flex flex-wrap gap-x-2" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
+                  {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
+                  {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
                 </div>
                 {selectedMeal === i && (
                   <div className="flex gap-4 mt-3 pt-3 border-t border-neutral-100 animate-fade-up">
@@ -417,20 +442,58 @@ export function FridgeBridge() {
               </div>
             ))}
 
-            <div className="mt-4 mb-3">
-              <div className="font-bold text-sm mb-2">Where are you located?</div>
-              <input className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-green-400" placeholder="Zip code or city (e.g., Davis, CA)" value={location} onChange={(e) => setLocation(e.target.value)} onKeyDown={(e) => e.key === "Enter" && findPantries()} />
-            </div>
+            {/* Location input */}
+            {selectedMeal !== null && (
+              <div className="mt-4 animate-fade-up">
+                <div className="font-bold text-sm mb-2" style={{ color: "#2d1f0e" }}>Where are you located?</div>
+                <input
+                  className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none bg-white/80 mb-3"
+                  style={{ borderColor: "#2d1f0e55" }}
+                  placeholder="Zip code or city (e.g., Davis, CA)"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && findPantries()}
+                />
+                <button onClick={findPantries} disabled={!location.trim() || loading} className="w-full py-3 rounded-2xl border-2 font-bold text-sm disabled:opacity-40 transition-colors" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", backgroundColor: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
+                  {loading ? "finding pantries..." : "find food pantries near me"}
+                </button>
+              </div>
+            )}
 
-            <button onClick={findPantries} disabled={selectedMeal === null || !location.trim() || loading} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
-              {loading ? "⏳ Finding pantries..." : "Find food pantries near me"}
-            </button>
-            <button onClick={() => setStep(1)} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">← Back to ingredients</button>
+            {error && <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">{error}</div>}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ─── STEP 3: Select pantries ─── */}
-        {step === 3 && (
+      {step > 1 && (
+        <>
+          {/* Header */}
+          <header className="bg-gradient-to-br from-green-800 to-green-900 px-5 py-6 text-white">
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <span className="text-3xl">🥫</span> FridgeBridge
+            </h1>
+            <p className="text-green-200 text-sm mt-1">AI-powered food pantry coordinator</p>
+          </header>
+
+          {/* Progress bar */}
+          <div className="flex gap-1.5 px-5 py-3 bg-white border-b border-neutral-100 sticky top-0 z-10">
+            {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+              <div key={i} className={`flex-1 h-1 rounded-full transition-colors ${i === step ? "bg-green-500" : i < step ? "bg-green-700" : "bg-neutral-200"}`} />
+            ))}
+          </div>
+
+          {/* Content */}
+          <main className="max-w-lg mx-auto px-5 py-6 pb-24">
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex justify-between">
+                {error}
+                <button onClick={() => setError("")} className="text-red-400 ml-2">×</button>
+              </div>
+            )}
+
+
+        {/* ─── STEP 2: Select pantries ─── */}
+        {step === 2 && (
           <div className="animate-fade-up">
             <h2 className="text-2xl font-bold text-neutral-900 mb-1">Nearby pantries</h2>
             <p className="text-sm text-neutral-500 mb-4">Select which pantries to call. Our AI agents will check availability.</p>
@@ -469,12 +532,12 @@ export function FridgeBridge() {
             <button onClick={callPantries} disabled={selectedPantries.size === 0 || loading} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
               {loading ? "⏳ Deploying agents..." : `Call ${selectedPantries.size} pantries simultaneously`}
             </button>
-            <button onClick={() => setStep(2)} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">← Back to meals</button>
+            <button onClick={() => setStep(1)} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">← Back</button>
           </div>
         )}
 
-        {/* ─── STEP 4: Calling ─── */}
-        {step === 4 && (
+        {/* ─── STEP 3: Calling ─── */}
+        {step === 3 && (
           <div className="animate-fade-up">
             <h2 className="text-2xl font-bold text-neutral-900 mb-1 flex items-center gap-2">
               <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -519,8 +582,8 @@ export function FridgeBridge() {
           </div>
         )}
 
-        {/* ─── STEP 5: Results ─── */}
-        {step === 5 && plan && (
+        {/* ─── STEP 4: Results ─── */}
+        {step === 4 && plan && (
           <div className="animate-fade-up">
             <h2 className="text-2xl font-bold text-neutral-900 mb-4">Your plan</h2>
 

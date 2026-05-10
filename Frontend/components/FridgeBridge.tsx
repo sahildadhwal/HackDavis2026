@@ -42,6 +42,7 @@ interface CallStatus {
     available?: string[];
     unavailable?: string[];
     substitutions?: Record<string, string>;
+    rejected?: boolean;
   };
 }
 
@@ -232,10 +233,9 @@ export function FridgeBridge() {
   };
 
   const getMissingIngredients = () => {
-    if (selectedMeal === null) return [];
+    if (selectedMeal === null) return meals.flatMap(m => m.missing || []);
     return meals[selectedMeal]?.missing || [];
   };
-
   const callPantries = async () => {
     const selected = pantries.filter((_, i) => selectedPantries.has(i));
     if (selected.length === 0) return;
@@ -274,6 +274,7 @@ export function FridgeBridge() {
           call_results: callResults,
           user_location: location,
           selected_meal: selectedMeal !== null ? meals[selectedMeal]?.name : "",
+          user_has: ingredients,
         }),
       });
       setPlan(await res.json());
@@ -575,8 +576,10 @@ export function FridgeBridge() {
                     <span className="text-xs ml-2 flex-shrink-0" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
                       {status.status === "ringing" ? "📞 Ringing" :
                        status.status === "connected" || status.status === "listening" ? "🗣 On call" :
-                       status.type === "call_complete" ? "✅ Done" :
-                       status.type === "call_error" ? "❌ Failed" : status.status}
+                       status.type === "call_complete" && status.results?.rejected ? "❌ Rejected" :
+                       status.type === "call_complete" ? "Done" :
+
+                       status.type === "call_error" ? "Failed" : status.status}
                     </span>
                   </div>
                   {status.message && <div className="text-xs italic mb-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{status.message}</div>}

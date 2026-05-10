@@ -1,5 +1,5 @@
 """
-FridgeBridge — AI-Powered Food Pantry Coordinator
+PantryPal — AI-Powered Food Pantry Coordinator
 HackDavis 2026
 
 Run:
@@ -51,7 +51,7 @@ ws_connections: dict = {}
 call_states: dict = {}
 
 # ─── App ──────────────────────────────────────────────────────────────────────
-app = FastAPI(title="FridgeBridge API")
+app = FastAPI(title="PantryPal API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
@@ -151,7 +151,7 @@ def parse_json(text: str):
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "FridgeBridge API"}
+    return {"status": "ok", "service": "PantryPal API"}
 
 
 @app.post("/api/analyze-fridge")
@@ -226,22 +226,89 @@ Include lat/lng coordinates for mapping."""}],
 
 
     # ✅ Add this — prepend your demo pantry
-    demo_pantry = {
-        "name": "HackDavis Food Pantry - Demo",
+    demo_pantry_1 = {
+        "name": "1. HackDavis Food Pantry, Demo 1",
         "address": "UC Davis, Davis, CA 95616",
-        "phone": "+17078632820",  # your number
+        "phone": "+17078632820",  # phone 1
         "hours": "Open Now",
         "notes": "Demo pantry for HackDavis 2026",
         "lat": 38.5382,
         "lng": -121.7617
     }
-    data["pantries"] = [demo_pantry] + data.get("pantries", [])
-
+    demo_pantry_2 = {
+        "name": "2. HackDavis Food Pantry, Demo 2",
+        "address": "UC Davis, Davis, CA 95616",
+        "phone": "+14088079857",  # phone 2 number here
+        "hours": "Open Now",
+        "notes": "Demo pantry for HackDavis 2026",
+        "lat": 38.5382,
+        "lng": -121.7618
+    }
+    data["pantries"] = [demo_pantry_1, demo_pantry_2] + data.get("pantries", [])
 
     if session_id in sessions:
         sessions[session_id]["pantries"] = data.get("pantries", [])
     return data
 
+
+async def poll_conversation(call_id: str, conversation_id: str, session_id: str, pantry_name: str):
+    seen_lines = 0
+    for _ in range(150):  # poll for up to 5 minutes
+        await asyncio.sleep(2)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                res = await client.get(
+                    f"https://api.elevenlabs.io/v1/convai/conversations/{conversation_id}",
+                    headers={"xi-api-key": ELEVENLABS_API_KEY}
+                )
+                data = res.json()
+                transcript = data.get("transcript", [])
+                # Push full transcript so far as one message
+                if transcript:
+                    full_so_far = "\n".join([
+                        f"{'Agent' if line['role'] == 'agent' else 'Pantry'}: {line['message']}"
+                        for line in transcript
+                    ])
+                    await notify_ws(session_id, {
+                        "type": "call_update",
+                        "call_id": call_id,
+                        "pantry": pantry_name,
+                        "status": "connected",
+                        "message": full_so_far
+                    })
+
+                # Check if done
+                if data.get("status") == "done":
+                    # Build full transcript text
+                    full_transcript = "\n".join([
+                        f"{'Agent' if t['role'] == 'agent' else 'Pantry'}: {t['message']}"
+                        for t in transcript
+                    ])
+                    # Ask Groq to extract available/unavailable items
+                    state = call_states.get(call_id, {})
+                    missing = state.get("missing_ingredients", [])
+                    try:
+                        analysis = await call_claude(
+                            [{"role": "user", "content": f"""Based on this phone call transcript between an AI agent and a food pantry, determine which ingredients the pantry has available.
+                                Ingredients we were looking for: {json.dumps(missing)}
+                                Transcript:{full_transcript}
+                                Return ONLY JSON: {{"available": [...], "unavailable": [...], "substitutions": {{}}}}"""}],
+                                system="Extract food availability from call transcript. Return only JSON."
+                        )
+                        results = parse_json(analysis)
+                    except Exception as e:
+                        print(f"Analysis error: {e}", flush=True)
+                        results = {"available": [], "unavailable": missing, "substitutions": {}}
+
+                    await notify_ws(session_id, {
+                        "type": "call_complete",
+                        "call_id": call_id,
+                        "pantry": pantry_name,
+                        "results": results
+                    })
+                    break
+        except Exception as e:
+            print(f"Poll error: {e}", flush=True)
 
 @app.post("/api/call-pantries")
 async def call_pantries(request: Request):
@@ -258,30 +325,28 @@ async def call_pantries(request: Request):
     call_ids = []
 
     for pantry in pantries:
-        phone = pantry.get("phone", "")
-        if not phone:
-            continue
-        call_id = uuid.uuid4().hex
-        call_states[call_id] = {
-            "session_id": session_id, "pantry": pantry, "missing_ingredients": missing_ingredients,
-            "selected_meal": selected_meal, "conversation": [], "results": {}, "status": "initiating",
-        }
-        try:
-            call = twilio_client.calls.create(
-                to=phone, from_=TWILIO_PHONE_NUMBER,
-                url=f"{BASE_URL}/api/twilio/voice/{call_id}",
-                status_callback=f"{BASE_URL}/api/twilio/status/{call_id}",
-                status_callback_event=["completed"], timeout=30,
-            )
-            call_states[call_id]["twilio_sid"] = call.sid
-            call_states[call_id]["status"] = "ringing"
-            call_ids.append(call_id)
-            await notify_ws(session_id, {"type": "call_started", "call_id": call_id, "pantry": pantry["name"], "status": "ringing"})
-        except Exception as e:
-            call_states[call_id]["status"] = "failed"
-            await notify_ws(session_id, {"type": "call_error", "call_id": call_id, "pantry": pantry["name"], "error": str(e)})
-
-    return {"call_ids": call_ids}
+            phone = pantry.get("phone", "")
+            if not phone:
+                continue
+            call_id = uuid.uuid4().hex
+            call_states[call_id] = {
+                "session_id": session_id, "pantry": pantry, "missing_ingredients": missing_ingredients,
+                "selected_meal": selected_meal, "conversation": [], "results": {}, "status": "initiating",
+            }
+            try:
+                call = twilio_client.calls.create(
+                    to=phone, from_=TWILIO_PHONE_NUMBER,
+                    url=f"{BASE_URL}/api/twilio/voice/{call_id}",
+                    status_callback=f"{BASE_URL}/api/twilio/status/{call_id}",
+                    status_callback_event=["completed"], timeout=30,
+                )
+                call_states[call_id]["twilio_sid"] = call.sid
+                call_states[call_id]["status"] = "ringing"
+                call_ids.append(call_id)
+                await notify_ws(session_id, {"type": "call_started", "call_id": call_id, "pantry": pantry["name"], "status": "ringing"})
+            except Exception as e:
+                call_states[call_id]["status"] = "failed"
+                await notify_ws(session_id, {"type": "call_error", "call_id": call_id, "pantry": pantry["name"], "error": str(e)})
 
 
 @app.api_route("/api/twilio/voice/{call_id}", methods=["GET", "POST"])
@@ -302,19 +367,35 @@ async def twilio_voice_webhook(call_id: str):
     state["status"] = "in_progress"
     await notify_ws(state["session_id"], {"type": "call_update", "call_id": call_id, "pantry": state["pantry"]["name"], "status": "connected", "message": "Agent speaking with pantry..."})
 
+    if False:
+        resp = VoiceResponse()
+        # default twilio voice (DONT USE, too ROBOTIC)
+        gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
+        gather.say(greeting, voice="Polly.Joanna")
+        resp.append(gather)
+        resp.say("I didn't catch that. Thank you, goodbye.")
+        resp.hangup()
+#   
+    print(">>> twilio_voice_webhook reached response building", flush=True)
+    print(f">>> ELEVENLABS_API_KEY set: {bool(ELEVENLABS_API_KEY)}", flush=True)
     resp = VoiceResponse()
+    resp.pause(length=1)
+    gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
     try:
         if ELEVENLABS_API_KEY:
-            resp.play(await generate_speech(greeting))
-        else:
-            resp.say(greeting, voice="Polly.Joanna")
-    except:
-        resp.say(greeting, voice="Polly.Joanna")
+            gather.say(greeting, voice="Polly.Joanna-Neural")
 
-    gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=8, speech_timeout="auto", language="en-US")
+        else:
+            print(">>> using Polly fallback", flush=True)
+            gather.say(greeting, voice="Polly.Joanna-Neural")
+    except Exception as e:
+        print(f">>> ELEVENLABS ERROR: {e}", flush=True)
+        gather.say(greeting, voice="Polly.Joanna-Neural")
     resp.append(gather)
+    print(f">>> XML being returned: {str(resp)}", flush=True)
     resp.say("I didn't catch that. Thank you, goodbye.")
     resp.hangup()
+    
     return HTMLResponse(str(resp), media_type="application/xml")
 
 
@@ -325,21 +406,35 @@ async def twilio_gather_webhook(call_id: str, request: Request):
     state = call_states.get(call_id)
     if not state:
         resp = VoiceResponse()
-        resp.say("Thank you. Goodbye.")
+        resp.say("Thank you so much, I truly appreciate it. ")
+        resp.pause(length=5)
         resp.hangup()
+        print(f">>> gather response XML: {str(resp)}", flush=True)
+
         return HTMLResponse(str(resp), media_type="application/xml")
 
     state["conversation"].append({"role": "pantry", "text": speech_result})
+    # Detect rejected/voicemail calls
+    rejection_keywords = ["telephone number", "voicemail", "not available", "leave a message", "press 1", "cannot be completed"]
+    if any(kw in speech_result.lower() for kw in rejection_keywords):
+        await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": {"available": [], "unavailable": [], "rejected": True}})
+        resp = VoiceResponse()
+        resp.hangup()
+        return HTMLResponse(str(resp), media_type="application/xml")
+    
     await notify_ws(state["session_id"], {"type": "call_update", "call_id": call_id, "pantry": state["pantry"]["name"], "status": "listening", "message": f"Pantry said: {speech_result}"})
 
     convo = "\n".join([f"{'Agent' if c['role']=='assistant' else 'Pantry'}: {c['text']}" for c in state["conversation"]])
     analysis = await call_claude(
         [{"role": "user", "content": f"""Analyzing AI agent ↔ food pantry call.
-Looking for: {json.dumps(state['missing_ingredients'])}
-Conversation:\n{convo}
-Return ONLY JSON: {{"available": [...], "unavailable": [...], "unclear": [...], "should_continue": bool, "follow_up_message": "...", "substitutions_to_ask": [...]}}"""}],
-        system="Analyze food pantry call. Return only JSON."
-    )
+    Looking for: {json.dumps(state['missing_ingredients'])}
+    Conversation:\n{convo}
+    Return ONLY JSON: {{"available": [...], "unavailable": [...], "unclear": [...], "should_continue": bool, "follow_up_message": "...", "substitutions_to_ask": [...], "delivery_info": {{}}}}
+
+    If any items are unavailable, the follow_up_message should ask when they expect a delivery or restock for those items. Be conversational and friendly."""}],
+
+        system="Analyze food pantry call. Return only JSON. For follow_up_message: sound natural and conversational, never repeat the full ingredient list, ask about restock/delivery if items unavailable, keep under 2 sentences, thank warmly if done. IMPORTANT: set should_continue to false if the pantry has already answered about all ingredients, or if you have already asked about restock/delivery once. Never ask the same question twice."    )
+
 
     try:
         result = parse_json(analysis)
@@ -353,25 +448,24 @@ Return ONLY JSON: {{"available": [...], "unavailable": [...], "unclear": [...], 
         msg = result.get("follow_up_message", "Thank you!")
         state["conversation"].append({"role": "assistant", "text": msg})
         try:
-            resp.play(await generate_speech(msg)) if ELEVENLABS_API_KEY else resp.say(msg, voice="Polly.Joanna")
+            resp.say(msg, voice="Polly.Joanna-Neural")
         except:
-            resp.say(msg, voice="Polly.Joanna")
+            resp.say(msg, voice="Polly.Joanna-Neural")
+
         gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=8, speech_timeout="auto", language="en-US")
         resp.append(gather)
         resp.say("Thank you, goodbye!")
         resp.hangup()
     else:
-        msg = result.get("follow_up_message", "Thank you so much!")
-        state["conversation"].append({"role": "assistant", "text": msg})
-        state["status"] = "completed"
-        try:
-            resp.play(await generate_speech(msg)) if ELEVENLABS_API_KEY else resp.say(msg, voice="Polly.Joanna")
-        except:
-            resp.say(msg, voice="Polly.Joanna")
-        resp.hangup()
-        await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": state["results"]})
-        await update_google_sheet([time.strftime("%Y-%m-%d %H:%M"), state["pantry"]["name"], state["pantry"].get("phone", ""), json.dumps(state["results"].get("available", [])), json.dumps(state["results"].get("unavailable", [])), state.get("selected_meal", "")])
-
+            msg = result.get("follow_up_message", "Thank you so much for your help. Goodbye!")
+            if not msg.strip():
+                msg = "Thank you so much for your help. Goodbye!"
+            state["conversation"].append({"role": "assistant", "text": msg})
+            state["status"] = "completed"
+            try:
+                resp.say(msg, voice="Polly.Joanna-Neural")
+            except:
+                resp.say("Thank you so much for your help. Goodbye!", voice="Polly.Joanna-Neural")
     return HTMLResponse(str(resp), media_type="application/xml")
 
 
@@ -380,41 +474,29 @@ async def twilio_status_callback(call_id: str, request: Request):
     form = await request.form()
     state = call_states.get(call_id)
     if state:
-        state["status"] = form.get("CallStatus", "")
-        await notify_ws(state["session_id"], {"type": "call_status", "call_id": call_id, "pantry": state["pantry"]["name"], "status": state["status"]})
+            twilio_status = form.get("CallStatus", "")
+            state["status"] = twilio_status
+            await notify_ws(state["session_id"], {"type": "call_status", "call_id": call_id, "pantry": state["pantry"]["name"], "status": twilio_status})
+            if twilio_status in ["busy", "no-answer", "canceled"]:
+                await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": {"available": [], "unavailable": [], "rejected": True}})
+            elif twilio_status in ["completed", "failed"]:
+                await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": state.get("results", {})}) 
+
     return HTMLResponse("OK")
-
-@app.post("/api/recipe-steps")
-async def recipe_steps(request: Request):
-    body = await request.json()
-    meal_name = body.get("meal_name", "")
-    have = body.get("have", [])
-    missing = body.get("missing", [])
-    time_minutes = body.get("time_minutes", 30)
-
-    result = await call_claude(
-        [{"role": "user", "content": f"""Provide detailed step-by-step cooking instructions for: {meal_name}
-Ingredients available: {json.dumps(have)}
-Missing ingredients (note substitutions if possible): {json.dumps(missing)}
-Return ONLY JSON: {{"steps": ["Step 1: ...", "Step 2: ..."], "tips": ["tip1", "tip2"], "servings": "2-4 servings"}}"""}],
-        system="Expert chef. Write clear, beginner-friendly numbered steps. Be specific with quantities and techniques. Return only JSON.",
-        max_tokens=1500,
-    )
-    try:
-        return parse_json(result)
-    except:
-        return {"steps": [result], "tips": [], "servings": "2-4 servings"}
-
 
 @app.post("/api/optimize-plan")
 async def optimize_plan(request: Request):
     body = await request.json()
     result = await call_claude(
-        [{"role": "user", "content": f"""Given food pantry results, create optimal pickup plan.
-Meal: {body.get('selected_meal', '')}
-Location: {body.get('user_location', '')}
-Results: {json.dumps(body.get('call_results', []))}
-Return ONLY JSON: {{"plan": [{{"pantry_name": "...", "address": "...", "items_to_get": [...], "visit_order": 1}}], "still_missing": [...], "recipe_modifications": "...", "summary": "..."}}"""}],
+        [{"role": "user", "content": 
+          f"""Given food pantry results, create optimal pickup plan.
+            Meal: {body.get('selected_meal', '')}
+            Location: {body.get('user_location', '')}
+            User already has at home: {json.dumps(body.get('user_has', []))}
+            Results: {json.dumps(body.get('call_results', []))}
+            Note: Only include ingredients in still_missing if they were NOT found at any pantry AND the user doesn't already have them at home.
+            Return ONLY JSON: {{"plan": [{{"pantry_name": "...", "address": "...", "items_to_get": [...], "visit_order": 1}}], "still_missing": [...], "recipe_modifications": "...", "summary": "..."}}"""
+        }],
         system="Logistics optimizer. Return only JSON."
     )
     try:

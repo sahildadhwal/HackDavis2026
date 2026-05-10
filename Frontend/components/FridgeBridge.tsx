@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 
 const PantryMap = dynamic(() => import("@/components/map/PantryMap").then(m => m.PantryMap), {
@@ -668,6 +668,9 @@ export function FridgeBridge() {
           </div>
         )}
       </main>
+
+        </>
+      )}
 
       {/* ─── Recipe Detail Modal ─── */}
       {viewingMealIdx !== null && (

@@ -246,63 +246,104 @@ export function FridgeBridge() {
   };
 
   return (
-    <div className="min-h-screen bg-stone-50">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-green-800 to-green-900 px-5 py-6 text-white">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <span className="text-3xl">🥫</span> FridgeBridge
-        </h1>
-        <p className="text-green-200 text-sm mt-1">AI-powered food pantry coordinator</p>
-      </header>
+    <div className="min-h-screen" style={{ backgroundColor: "#FCEEAD" }}>
+      {/* ─── STEP 0: Landing page ─── */}
+      {step === 0 && (
+        <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
+          {/* Bottom-left plants */}
+          <img src="/flower2.png" alt="" className="absolute bottom-0 left-0 w-64 h-auto pointer-events-none select-none" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          <img src="/flower3.png" alt="" className="absolute bottom-0 left-0 w-60 h-auto pointer-events-none select-none" style={{ transform: "rotate(25deg) translateX(30%)" }} />
 
-      {/* Progress bar */}
-      <div className="flex gap-1.5 px-5 py-3 bg-white border-b border-neutral-100 sticky top-0 z-10">
-        {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
-          <div key={i} className={`flex-1 h-1 rounded-full transition-colors ${i === step ? "bg-green-500" : i < step ? "bg-green-700" : "bg-neutral-200"}`} />
-        ))}
-      </div>
+          {/* Top-right plant */}
+          <img src="/flower4.png" alt="" className="absolute top-0 right-0 w-56 h-auto pointer-events-none select-none" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
 
-      {/* Content */}
-      <main className="max-w-lg mx-auto px-5 py-6 pb-24">
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex justify-between">
-            {error}
-            <button onClick={() => setError("")} className="text-red-400 ml-2">×</button>
-          </div>
-        )}
+          {/* Bottom-right plant */}
+          <img src="/flower1.png" alt="" className="absolute bottom-0 right-0 w-72 h-auto pointer-events-none select-none" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
 
-        {/* ─── STEP 0: Scan fridge ─── */}
-        {step === 0 && (
-          <div className="animate-fade-up">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-1">Scan your fridge</h2>
-            <p className="text-sm text-neutral-500 mb-6">Take a photo of your fridge, pantry, or whatever food you have.</p>
+          {/* Main content */}
+          <div className="relative z-10 flex flex-col items-center text-center px-8">
+            <h1 className="mb-3 leading-none tracking-tight" style={{ fontSize: "clamp(2.8rem, 12vw, 5rem)", color: "#2d1f0e" }}>
+              <span style={{ fontWeight: 900, fontFamily: "Georgia, 'Times New Roman', serif" }}>fridge</span>
+              <span style={{ fontWeight: 400, fontFamily: "Georgia, 'Times New Roman', serif" }}>bridge</span>
+            </h1>
+
+            <p className="text-sm mb-8 leading-relaxed" style={{ color: "#2d1f0e" }}>
+              snap your fridge. we&apos;ll find a meal<br />
+              and call nearby pantries for what&apos;s missing.
+            </p>
 
             <div
-              className={`border-2 border-dashed rounded-2xl cursor-pointer transition-all ${imagePreview ? "border-none p-0 overflow-hidden" : "border-neutral-300 hover:border-green-400 hover:bg-green-50 p-12 text-center bg-white"}`}
+              className="w-72 h-52 rounded-3xl cursor-pointer flex items-center justify-center mb-5 transition-all hover:brightness-95 overflow-hidden"
+              style={{ backgroundColor: "#b5af7a" }}
               onClick={() => fileInputRef.current?.click()}
             >
               {imagePreview ? (
-                <img src={imagePreview} alt="Fridge" className="w-full rounded-2xl" />
+                <img src={imagePreview} alt="Fridge" className="w-full h-full object-cover" />
               ) : (
-                <>
-                  <div className="text-5xl mb-3">📸</div>
-                  <div className="font-medium text-neutral-700">Tap to take a photo or upload</div>
-                  <div className="text-sm text-neutral-400 mt-1">JPG, PNG — snap your fridge or countertop</div>
-                </>
+                <svg width="52" height="46" viewBox="0 0 52 46" fill="none">
+                  <path d="M4 16h6l4-6h24l4 6h6a3 3 0 0 1 3 3v20a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3V19a3 3 0 0 1 3-3z" stroke="#7a7550" strokeWidth="2.5" fill="none" strokeLinejoin="round"/>
+                  <circle cx="26" cy="28" r="8" stroke="#7a7550" strokeWidth="2.5" fill="none"/>
+                </svg>
               )}
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageSelect} className="hidden" />
 
-            {imagePreview && (
-              <button onClick={() => { setImage(null); setImagePreview(""); }} className="mt-3 w-full py-2.5 rounded-xl border border-neutral-200 bg-white text-sm font-medium text-neutral-600 hover:bg-neutral-50">
-                Retake photo
+            {imagePreview ? (
+              <div className="flex gap-3 w-72">
+                <button
+                  onClick={() => { setImage(null); setImagePreview(""); }}
+                  className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium bg-transparent hover:bg-white/30 transition-colors"
+                  style={{ borderColor: "#2d1f0e", color: "#2d1f0e" }}
+                >
+                  retake
+                </button>
+                <button
+                  onClick={analyzeFridge}
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: "#2d1f0e", borderColor: "#2d1f0e", color: "#FCEEAD" }}
+                >
+                  {loading ? "analyzing..." : "analyze →"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setSessionId(crypto.randomUUID()); setStep(1); }}
+                className="py-2.5 px-8 rounded-full border-2 text-sm font-medium bg-transparent hover:bg-white/30 transition-colors"
+                style={{ borderColor: "#2d1f0e", color: "#2d1f0e" }}
+              >
+                or type what you have...
               </button>
             )}
-            <button onClick={analyzeFridge} disabled={!image || loading} className="mt-3 w-full py-4 rounded-2xl bg-green-600 text-white font-bold text-base disabled:bg-neutral-300 disabled:cursor-not-allowed hover:bg-green-700 transition-colors">
-              {loading ? "⏳ Analyzing..." : "Analyze my food"}
-            </button>
           </div>
-        )}
+        </div>
+      )}
+
+      {step > 0 && (
+        <>
+          {/* Header */}
+          <header className="bg-gradient-to-br from-green-800 to-green-900 px-5 py-6 text-white">
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <span className="text-3xl">🥫</span> FridgeBridge
+            </h1>
+            <p className="text-green-200 text-sm mt-1">AI-powered food pantry coordinator</p>
+          </header>
+
+          {/* Progress bar */}
+          <div className="flex gap-1.5 px-5 py-3 bg-white border-b border-neutral-100 sticky top-0 z-10">
+            {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
+              <div key={i} className={`flex-1 h-1 rounded-full transition-colors ${i === step ? "bg-green-500" : i < step ? "bg-green-700" : "bg-neutral-200"}`} />
+            ))}
+          </div>
+
+          {/* Content */}
+          <main className="max-w-lg mx-auto px-5 py-6 pb-24">
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex justify-between">
+                {error}
+                <button onClick={() => setError("")} className="text-red-400 ml-2">×</button>
+              </div>
+            )}
 
         {/* ─── STEP 1: Edit ingredients ─── */}
         {step === 1 && (
@@ -523,7 +564,9 @@ export function FridgeBridge() {
             </button>
           </div>
         )}
-      </main>
+          </main>
+        </>
+      )}
     </div>
   );
 }

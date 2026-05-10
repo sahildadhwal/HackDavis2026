@@ -75,7 +75,7 @@ export function FridgeBridge() {
   const [callStatuses, setCallStatuses] = useState<Record<string, CallStatus>>({});
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
-  const [demoMode, setDemoMode] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
   const [error, setError] = useState("");
   const [viewingMealIdx, setViewingMealIdx] = useState<number | null>(null);
   const [recipeDetail, setRecipeDetail] = useState<RecipeDetail | null>(null);
@@ -86,6 +86,7 @@ export function FridgeBridge() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const geoInitiatedRef = useRef(false);
 
   // WebSocket connection
   useEffect(() => {
@@ -104,8 +105,9 @@ export function FridgeBridge() {
 
   // Auto-geolocate when entering the pantries step
   useEffect(() => {
-    if (step !== 2 || pantries.length > 0 || locating || locationDenied) return;
+    if (step !== 2 || pantries.length > 0 || geoInitiatedRef.current || locationDenied) return;
     if (!navigator.geolocation) { setLocationDenied(true); return; }
+    geoInitiatedRef.current = true;
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -125,7 +127,7 @@ export function FridgeBridge() {
       },
       () => { setLocating(false); setLocationDenied(true); }
     );
-  }, [step, pantries.length, locating, locationDenied]);
+  }, [step, pantries.length, locationDenied]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -213,7 +215,7 @@ export function FridgeBridge() {
       });
       const data = await res.json();
       setPantries(data.pantries || []);
-      setSelectedPantries(new Set(data.pantries?.map((_: Pantry, i: number) => i) || []));
+      setSelectedPantries(new Set());
       setStep(2);
     } catch {
       setError("Failed to find pantries.");
@@ -313,6 +315,7 @@ export function FridgeBridge() {
     setSelectedMeal(null); setPantries([]); setPlan(null); setCallStatuses({}); setError("");
     setLocation(""); setLocating(false); setLocationDenied(false); setUserCoords(null);
     setViewingMealIdx(null); setRecipeDetail(null);
+    geoInitiatedRef.current = false;
   };
 
   return (
@@ -447,31 +450,18 @@ export function FridgeBridge() {
             ) : meals.map((meal, i) => (
               <div key={i} className="p-4 mb-2 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }}>
                 <div className="font-medium text-base mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
-                <div className="text-sm mb-2 flex flex-wrap gap-x-2" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
+                <div className="text-sm mb-3 flex flex-wrap gap-x-2" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
                   {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
                   {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
                 </div>
-                <button onClick={() => { setSelectedMeal(i); setStep(2); }} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                  find nearby pantries →
-                </button>
-                {selectedMeal === i && (
-                  <div className="flex gap-4 mt-3 pt-3 border-t border-neutral-100 animate-fade-up">
-                    <div className="flex-1">
-                      <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">✓ You have</div>
-                      {meal.have?.map((item, j) => <div key={j} className="text-sm text-green-600">{item}</div>)}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">✗ Missing</div>
-                      {meal.missing?.map((item, j) => <div key={j} className="text-sm text-red-500">{item}</div>)}
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openRecipeDetail(i); }}
-                      className="self-end px-3 py-2 bg-green-600 text-white text-xs font-bold rounded-xl hover:bg-green-700 transition-colors whitespace-nowrap"
-                    >
-                      📖 How to cook
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-4">
+                  <button onClick={() => openRecipeDetail(i)} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
+                    how to cook →
+                  </button>
+                  <button onClick={() => { setSelectedMeal(i); setStep(2); }} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
+                    find pantries →
+                  </button>
+                </div>
               </div>
             ))}
 
@@ -481,195 +471,165 @@ export function FridgeBridge() {
         </div>
       )}
 
-      {step > 1 && (
-        <>
-          {/* Header */}
-          <header className="bg-gradient-to-br from-green-800 to-green-900 px-5 py-6 text-white">
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <span className="text-3xl">🥫</span> FridgeBridge
-            </h1>
-            <p className="text-green-200 text-sm mt-1">AI-powered food pantry coordinator</p>
-          </header>
+      {step === 2 && (
+        <div className="min-h-screen relative overflow-x-hidden">
+          <img src="/flower2.png" alt="" className="fixed bottom-0 left-0 w-64 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          <img src="/flower3.png" alt="" className="fixed bottom-0 left-0 w-60 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(25deg) translateX(30%)" }} />
+          <img src="/flower4.png" alt="" className="fixed top-0 right-0 w-56 h-auto pointer-events-none select-none z-0" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
+          <img src="/flower1.png" alt="" className="fixed bottom-0 right-0 w-72 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
 
-          {/* Progress bar */}
-          <div className="flex gap-1.5 px-5 py-3 bg-white border-b border-neutral-100 sticky top-0 z-10">
-            {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
-              <div key={i} className={`flex-1 h-1 rounded-full transition-colors ${i === step ? "bg-green-500" : i < step ? "bg-green-700" : "bg-neutral-200"}`} />
-            ))}
-          </div>
-
-          {/* Content */}
-          <main className="max-w-lg mx-auto px-5 py-6 pb-24">
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm flex justify-between">
-                {error}
-                <button onClick={() => setError("")} className="text-red-400 ml-2">×</button>
-              </div>
-            )}
-
-
-        {/* ─── STEP 2: Select pantries ─── */}
-        {step === 2 && (
-          <div className="animate-fade-up">
+          <div className="relative z-10 max-w-2xl mx-auto px-6 py-8">
             {pantries.length === 0 ? (
-              <div className="py-8 text-center">
+              <div className="py-16 text-center">
                 {locating || loading ? (
-                  <p className="text-neutral-500 text-sm animate-pulse">Finding pantries near you...</p>
+                  <p className="animate-pulse" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>finding pantries near you...</p>
                 ) : locationDenied ? (
                   <div>
-                    <p className="text-sm text-neutral-500 mb-4">Location access denied. Enter your location manually:</p>
+                    <p className="mb-4 text-sm" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>location access denied. enter your location:</p>
                     <input
                       autoFocus
-                      className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-green-400 bg-white mb-3"
-                      placeholder="Zip code or city (e.g., Davis, CA)"
+                      className="w-full px-4 py-2.5 rounded-full border-2 text-sm focus:outline-none mb-3"
+                      style={{ borderColor: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)", color: "#2d1f0e" }}
+                      placeholder="city or zip code..."
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && findPantries()}
                     />
-                    <button onClick={() => findPantries()} disabled={!location.trim()} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
-                      Find food pantries near me
+                    <button onClick={() => findPantries()} disabled={!location.trim()} className="w-full py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
+                      find pantries
                     </button>
                   </div>
                 ) : null}
-                <button onClick={() => setStep(1)} className="mt-4 text-sm text-neutral-400 hover:text-neutral-600 transition-colors">← Back</button>
+                <button onClick={() => setStep(1)} className="mt-6 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← back</button>
               </div>
             ) : (
-              <div>
-            <h2 className="text-2xl font-bold text-neutral-900 mb-1">Nearby pantries</h2>
-            <p className="text-sm text-neutral-500 mb-4">Select which pantries to call. Our AI agents will check availability.</p>
-
-            <label className="flex items-center gap-2 p-3 mb-4 bg-amber-50 border border-amber-100 rounded-xl cursor-pointer text-sm text-amber-600">
-              <input type="checkbox" checked={demoMode} onChange={(e) => setDemoMode(e.target.checked)} className="accent-amber-500" />
-              <span><strong>Demo mode</strong> — simulates calls with AI (no Twilio needed)</span>
-            </label>
-
-            <div className="text-sm text-neutral-500 mb-3">
-              Looking for: <strong>{getMissingIngredients().join(", ")}</strong>
-            </div>
-
-            {pantries.length > 0 && (
-              <div className="mb-4 rounded-xl overflow-hidden border border-neutral-200">
-                <PantryMap pantries={pantries} userCoords={userCoords} />
-              </div>
-            )}
-
-            {pantries.map((p, i) => (
-              <div key={i} onClick={() => togglePantry(i)} className={`p-4 mb-2 rounded-xl border cursor-pointer transition-all ${selectedPantries.has(i) ? "border-green-500 bg-green-50" : "border-neutral-100 bg-white"}`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-bold text-sm">{p.name}</div>
-                    <div className="text-xs text-neutral-400">{p.address}</div>
-                    <div className="text-xs text-green-600 mt-1">{p.phone}</div>
-                    {p.hours && <div className="text-xs text-neutral-400">{p.hours}</div>}
-                  </div>
-                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 ${selectedPantries.has(i) ? "bg-green-500 border-green-500 text-white" : "border-neutral-300"}`}>
-                    {selectedPantries.has(i) ? "✓" : ""}
-                  </div>
+              <>
+                <div className="mb-5 rounded-2xl overflow-hidden border-2" style={{ borderColor: "#7aa4c8" }}>
+                  <PantryMap pantries={pantries} userCoords={userCoords} />
                 </div>
-              </div>
-            ))}
 
-            <button onClick={callPantries} disabled={selectedPantries.size === 0 || loading} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
-              {loading ? "⏳ Deploying agents..." : `Call ${selectedPantries.size} pantries simultaneously`}
-            </button>
-            <button onClick={() => { setPantries([]); setStep(1); }} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">← Back</button>
-              </div>
+                <div className="text-xl mb-4" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>call nearby pantries</div>
+
+                {pantries.map((p, i) => (
+                  <div
+                    key={i}
+                    onClick={() => togglePantry(i)}
+                    className="flex items-center gap-3 px-5 py-3 mb-3 rounded-full border-2 cursor-pointer transition-all"
+                    style={{ borderColor: "#2d1f0e", backgroundColor: selectedPantries.has(i) ? "rgba(134,196,100,0.25)" : "rgba(255,255,255,0.6)" }}
+                  >
+                    <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0" style={{ borderColor: "#2d1f0e", backgroundColor: selectedPantries.has(i) ? "#2d1f0e" : "transparent" }}>
+                      {selectedPantries.has(i) && <span className="text-xs" style={{ color: "#FCEEAD" }}>✓</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{p.name}</div>
+                      <div className="text-xs" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
+                        {p.hours || p.address}{p.phone ? ` · ${p.phone}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {error && <div className="mb-3 p-3 rounded-2xl text-sm" style={{ color: "#c0392b", fontFamily: "var(--font-libertinus)", backgroundColor: "rgba(255,100,100,0.15)" }}>{error}</div>}
+
+                <button onClick={callPantries} disabled={selectedPantries.size === 0 || loading} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-1 transition-all disabled:opacity-40" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
+                  {loading ? "deploying agents..." : `call ${selectedPantries.size} pantries`}
+                </button>
+                <button onClick={() => { setPantries([]); setStep(1); }} className="w-full mt-2 py-2 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← back</button>
+              </>
             )}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ─── STEP 3: Calling ─── */}
-        {step === 3 && (
-          <div className="animate-fade-up">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-1 flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              Calling pantries...
-            </h2>
-            <p className="text-sm text-neutral-500 mb-6">AI agents are calling simultaneously. Watch results come in live.</p>
+      {step === 3 && (
+        <div className="min-h-screen relative overflow-x-hidden">
+          <img src="/flower2.png" alt="" className="fixed bottom-0 left-0 w-64 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          <img src="/flower3.png" alt="" className="fixed bottom-0 left-0 w-60 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(25deg) translateX(30%)" }} />
+          <img src="/flower4.png" alt="" className="fixed top-0 right-0 w-56 h-auto pointer-events-none select-none z-0" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
+          <img src="/flower1.png" alt="" className="fixed bottom-0 right-0 w-72 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
+
+          <div className="relative z-10 max-w-2xl mx-auto px-6 py-8">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <div className="text-xl" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>calling pantries...</div>
+            </div>
+            <p className="text-sm mb-6" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>AI agents are calling simultaneously. Watch results come in live.</p>
 
             {Object.entries(callStatuses).map(([key, status]) => (
-              <div key={key} className="p-4 mb-3 rounded-xl border border-neutral-100 bg-white animate-slide-in">
-                <div className="flex justify-between items-center mb-2">
-                  <div className="font-bold text-sm">{status.pantry || key}</div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                    status.status === "ringing" ? "bg-amber-100 text-amber-600" :
-                    status.status === "connected" || status.status === "listening" ? "bg-green-100 text-green-700" :
-                    status.type === "call_complete" ? "bg-green-600 text-white" :
-                    status.type === "call_error" ? "bg-red-100 text-red-500" : "bg-neutral-100 text-neutral-500"
-                  }`}>
-                    {status.status === "ringing" ? "📞 Ringing" :
-                     status.status === "connected" || status.status === "listening" ? "🗣 On Call" :
-                     status.type === "call_complete" ? "✅ Done" :
-                     status.type === "call_error" ? "❌ Failed" : status.status}
-                  </span>
-                </div>
-                {status.message && <div className="text-sm text-neutral-500 italic">{status.message}</div>}
-                {status.results && (
-                  <div className="mt-2 pt-2 border-t border-neutral-50">
-                    {status.results.available?.map((item, i) => <div key={i} className="text-sm text-green-600">✓ {item}</div>)}
-                    {status.results.unavailable?.map((item, i) => <div key={i} className="text-sm text-neutral-400 line-through">✗ {item}</div>)}
-                    {status.results.substitutions && Object.entries(status.results.substitutions).map(([k, v]) => (
-                      <div key={k} className="text-sm text-amber-600">↺ {k} → {v}</div>
-                    ))}
+              <div key={key} className="flex items-start gap-3 px-5 py-3 mb-3 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: status.type === "call_complete" ? "rgba(134,196,100,0.25)" : "rgba(255,255,255,0.6)" }}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-sm font-medium" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{status.pantry || key}</div>
+                    <span className="text-xs ml-2 flex-shrink-0" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
+                      {status.status === "ringing" ? "📞 ringing" :
+                       status.status === "connected" || status.status === "listening" ? "🗣 on call" :
+                       status.type === "call_complete" ? "✅ done" :
+                       status.type === "call_error" ? "❌ failed" : status.status}
+                    </span>
                   </div>
-                )}
+                  {status.message && <div className="text-xs italic mb-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{status.message}</div>}
+                  {status.results && (
+                    <div className="flex flex-wrap gap-x-3 mt-1">
+                      {status.results.available?.map((item: unknown, i: number) => <span key={i} className="text-xs" style={{ color: "#3a7d44", fontFamily: "var(--font-libertinus)" }}>✓ {typeof item === "string" ? item : (item as Record<string,string>).item ?? JSON.stringify(item)}</span>)}
+                      {status.results.unavailable?.map((item: unknown, i: number) => <span key={i} className="text-xs line-through" style={{ color: "#2d1f0e66", fontFamily: "var(--font-libertinus)" }}>✗ {typeof item === "string" ? item : (item as Record<string,string>).item ?? JSON.stringify(item)}</span>)}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
 
+            {error && <div className="mb-3 p-3 rounded-2xl text-sm" style={{ color: "#c0392b", fontFamily: "var(--font-libertinus)", backgroundColor: "rgba(255,100,100,0.15)" }}>{error}</div>}
+
             {allCallsDone && (
-              <button onClick={getOptimalPlan} disabled={loading} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold hover:bg-green-700 transition-colors animate-fade-up">
-                {loading ? "⏳ Optimizing..." : "Get my plan →"}
+              <button onClick={getOptimalPlan} disabled={loading} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-2 transition-all disabled:opacity-40" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
+                {loading ? "optimizing..." : "get my plan →"}
               </button>
             )}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* ─── STEP 4: Results ─── */}
-        {step === 4 && plan && (
-          <div className="animate-fade-up">
-            <h2 className="text-2xl font-bold text-neutral-900 mb-4">Your plan</h2>
+      {step === 4 && plan && (
+        <div className="min-h-screen relative overflow-x-hidden">
+          <img src="/flower2.png" alt="" className="fixed bottom-0 left-0 w-64 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          <img src="/flower3.png" alt="" className="fixed bottom-0 left-0 w-60 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(25deg) translateX(30%)" }} />
+          <img src="/flower4.png" alt="" className="fixed top-0 right-0 w-56 h-auto pointer-events-none select-none z-0" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
+          <img src="/flower1.png" alt="" className="fixed bottom-0 right-0 w-72 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
 
-            <div className="bg-gradient-to-br from-green-700 to-green-900 rounded-2xl p-6 text-white mb-4">
-              <div className="text-lg font-bold mb-3">🗺 Pickup route</div>
-              {plan.plan?.map((stop, i) => (
-                <div key={i} className="bg-white/10 rounded-xl p-3 mb-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">{stop.visit_order || i + 1}</span>
-                    <span className="font-bold">{stop.pantry_name}</span>
-                  </div>
-                  <div className="text-sm opacity-90 ml-8">Pick up: {stop.items_to_get?.join(", ")}</div>
+          <div className="relative z-10 max-w-2xl mx-auto px-6 py-8">
+            <div className="text-xl mb-5" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>your plan</div>
+
+            {plan.plan?.map((stop, i) => (
+              <div key={i} className="flex items-start gap-3 px-5 py-3 mb-3 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.6)" }}>
+                <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 text-xs font-medium mt-0.5" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{stop.visit_order || i + 1}</div>
+                <div>
+                  <div className="text-sm font-medium mb-0.5" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{stop.pantry_name}</div>
+                  <div className="text-xs" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{stop.address}</div>
+                  <div className="text-xs mt-1" style={{ color: "#3a7d44", fontFamily: "var(--font-libertinus)" }}>pick up: {stop.items_to_get?.join(", ")}</div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
 
             {plan.still_missing?.length > 0 && (
-              <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl mb-3">
-                <div className="font-bold text-sm text-amber-600 mb-1">Still missing</div>
-                <div className="text-sm text-amber-600">{plan.still_missing.join(", ")}</div>
-              </div>
-            )}
-
-            {plan.recipe_modifications && (
-              <div className="p-4 bg-white border border-neutral-100 rounded-xl mb-3">
-                <div className="font-bold text-sm mb-1">💡 Recipe adjustments</div>
-                <div className="text-sm text-neutral-600 leading-relaxed">{plan.recipe_modifications}</div>
+              <div className="px-5 py-3 mb-3 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,200,100,0.3)" }}>
+                <div className="text-sm font-medium mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>still missing</div>
+                <div className="text-sm" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{plan.still_missing.join(", ")}</div>
               </div>
             )}
 
             {plan.summary && (
-              <div className="p-4 bg-green-50 border border-green-100 rounded-xl mb-3">
-                <div className="text-sm text-green-700 leading-relaxed">{plan.summary}</div>
+              <div className="px-5 py-3 mb-3 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.6)" }}>
+                <div className="text-sm leading-relaxed" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{plan.summary}</div>
               </div>
             )}
 
-            <button onClick={resetAll} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">
-              Start over
+            {error && <div className="mb-3 p-3 rounded-2xl text-sm" style={{ color: "#c0392b", fontFamily: "var(--font-libertinus)", backgroundColor: "rgba(255,100,100,0.15)" }}>{error}</div>}
+
+            <button onClick={resetAll} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-2 transition-all hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>
+              start over
             </button>
           </div>
-        )}
-      </main>
-
-        </>
+        </div>
       )}
 
       {/* ─── Recipe Detail Modal ─── */}

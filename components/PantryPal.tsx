@@ -42,9 +42,9 @@ interface CallStatus {
     available?: string[];
     unavailable?: string[];
     substitutions?: Record<string, string>;
+    rejected?: boolean;
   };
 }
-
 interface Plan {
   plan: { pantry_name: string; address: string; items_to_get: string[]; visit_order: number }[];
   still_missing: string[];
@@ -63,7 +63,7 @@ export function PantryPal() {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [selectedMeal, setSelectedMeal] = useState<number | null>(null);
   const [specificRequest, setSpecificRequest] = useState("");
-  const [location, setLocation] = useState("");
+  const [location, setLocation] = useState("95616");
   const [pantries, setPantries] = useState<Pantry[]>([]);
   const [selectedPantries, setSelectedPantries] = useState<Set<number>>(new Set());
   const [callStatuses, setCallStatuses] = useState<Record<string, CallStatus>>({});
@@ -168,7 +168,8 @@ export function PantryPal() {
       });
       const data = await res.json();
       setPantries(data.pantries || []);
-      setSelectedPantries(new Set(data.pantries?.map((_: Pantry, i: number) => i) || []));
+      // setSelectedPantries(new Set(data.pantries?.map((_: Pantry, i: number) => i) || []));
+      setSelectedPantries(new Set());
       setStep(3);
     } catch {
       setError("Failed to find pantries.");
@@ -396,11 +397,6 @@ export function PantryPal() {
             <h2 className="text-2xl font-bold text-neutral-900 mb-1">Nearby pantries</h2>
             <p className="text-sm text-neutral-500 mb-4">Select which pantries to call. Our AI agents will check availability.</p>
 
-            <label className="flex items-center gap-2 p-3 mb-4 bg-amber-50 border border-amber-100 rounded-xl cursor-pointer text-sm text-amber-600">
-              <input type="checkbox" checked={demoMode} onChange={(e) => setDemoMode(e.target.checked)} className="accent-amber-500" />
-              <span><strong>Demo mode</strong> — simulates calls with AI (no Twilio needed)</span>
-            </label>
-
             <div className="text-sm text-neutral-500 mb-3">
               Looking for: <strong>{getMissingIngredients().join(", ")}</strong>
             </div>
@@ -455,11 +451,14 @@ export function PantryPal() {
                   }`}>
                     {status.status === "ringing" ? "📞 Ringing" :
                      status.status === "connected" || status.status === "listening" ? "🗣 On Call" :
-                     status.type === "call_complete" ? "✅ Done" :
-                     status.type === "call_error" ? "❌ Failed" : status.status}
+                     status.type === "call_complete" && status.results?.rejected ? "Rejected" :
+                     status.type === "call_complete" ? "Done" :
+                     status.type === "call_error" ? "Failed" : status.status}
                   </span>
                 </div>
-                {status.message && <div className="text-sm text-neutral-500 italic">{status.message}</div>}
+                {status.type !== "call_complete" && status.message && <div className="text-sm text-neutral-500 italic">{status.message}</div>}
+                {status.results?.rejected && <div className="text-sm text-red-400 italic">Rejected Call</div>}
+
                 {status.results && (
                   <div className="mt-2 pt-2 border-t border-neutral-50">
                     {status.results.available?.map((item, i) => <div key={i} className="text-sm text-green-600">✓ {item}</div>)}

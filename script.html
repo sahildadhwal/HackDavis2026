@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FridgeBridge — HackDavis 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  :root { --cream: #F5F2C8; --olive: #2D2D1A; --olive-mid: #4A4A28; --olive-light: #7A7A48; --olive-faint: #E8E4A8; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #1a1a0e; display: flex; flex-direction: column; align-items: center; padding: 32px 16px; gap: 4px; }
+  .slide { width: 960px; height: 540px; background: var(--cream); color: var(--olive); position: relative; overflow: hidden; flex-shrink: 0; display: flex; flex-direction: column; margin-bottom: 20px; }
+  .slide-number { position: absolute; bottom: 22px; right: 28px; font-size: 11px; font-weight: 500; color: var(--olive-light); letter-spacing: 0.05em; }
+  .slide-label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--olive-light); margin-bottom: 24px; }
+  .s1 { justify-content: center; align-items: center; gap: 20px; }
+  .s1 .logo { font-size: 72px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+  .s1 .logo span { font-weight: 300; }
+  .s1 .tagline { font-size: 22px; font-weight: 400; color: var(--olive-mid); }
+  .s1 .event-badge { margin-top: 12px; display: inline-block; border: 1.5px solid var(--olive-mid); border-radius: 999px; padding: 6px 18px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--olive-mid); }
+  .s1 .corner-tl { position: absolute; top: 28px; left: 32px; font-size: 12px; font-weight: 600; color: var(--olive-light); letter-spacing: 0.06em; text-transform: uppercase; }
+  .s2 { padding: 52px 64px; justify-content: space-between; }
+  .s2 .headline { font-size: 42px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; }
+  .stat-row { display: flex; gap: 40px; }
+  .stat-num { font-size: 44px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+  .stat-label { font-size: 12px; font-weight: 500; color: var(--olive-mid); max-width: 160px; line-height: 1.4; }
+  .s3 { padding: 52px 64px; justify-content: center; gap: 32px; }
+  .s3 .big-answer { font-size: 54px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.05; }
+  .s3 .big-answer em { font-style: normal; color: var(--olive-mid); }
+  .s3 .descriptor { font-size: 17px; color: var(--olive-mid); max-width: 540px; line-height: 1.6; }
+  .pill-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pill { border: 1.5px solid var(--olive); border-radius: 999px; padding: 7px 16px; font-size: 13px; font-weight: 600; }
+  .s4 { padding: 48px 56px; justify-content: space-between; }
+  .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; flex: 1; margin-top: 8px; }
+  .step-card { background: var(--olive-faint); border-radius: 12px; padding: 22px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .step-num { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--olive-light); }
+  .step-title { font-size: 17px; font-weight: 800; line-height: 1.2; }
+  .step-desc { font-size: 12.5px; color: var(--olive-mid); line-height: 1.5; }
+  .step-tech { margin-top: auto; font-size: 11px; font-weight: 600; color: var(--olive-light); }
+  .s5 { padding: 48px 56px; justify-content: space-between; }
+  .arch-placeholder { flex: 1; margin-top: 16px; border: 2px dashed var(--olive-light); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--olive-light); }
+  .arch-placeholder .insert-text { font-size: 20px; font-weight: 600; }
+  .arch-placeholder .insert-sub { font-size: 13px; }
+  .s6 { padding: 48px 56px; justify-content: space-between; }
+  .tech-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; flex: 1; margin-top: 8px; }
+  .tech-card { background: var(--olive-faint); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+  .tech-category { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--olive-light); }
+  .tech-name { font-size: 15px; font-weight: 800; }
+  .tech-sub { font-size: 11px; color: var(--olive-mid); line-height: 1.4; }
+  .s7 { padding: 52px 64px; justify-content: space-between; }
+  .impact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; margin-top: 8px; }
+  .impact-headline { font-size: 20px; font-weight: 800; line-height: 1.2; }
+  .impact-body { font-size: 13px; color: var(--olive-mid); line-height: 1.55; margin-top: 6px; }
+  .s8 { padding: 52px 64px; justify-content: center; align-items: center; gap: 28px; text-align: center; }
+  .s8 .demo-title { font-size: 56px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+  .s8 .demo-sub { font-size: 18px; color: var(--olive-mid); max-width: 520px; line-height: 1.5; }
+  .demo-steps { display: flex; gap: 12px; align-items: center; font-size: 13px; font-weight: 600; }
+  .demo-arrow { color: var(--olive-light); }
+  .s9 { padding: 48px 56px; justify-content: space-between; }
+  .team-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; flex: 1; margin-top: 8px; }
+  .team-card { background: var(--olive-faint); border-radius: 12px; padding: 22px 18px; display: flex; flex-direction: column; gap: 6px; }
+  .team-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--olive); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: var(--cream); margin-bottom: 8px; }
+  .team-name { font-size: 17px; font-weight: 800; }
+  .team-role { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--olive-light); }
+  .team-focus { font-size: 12px; color: var(--olive-mid); line-height: 1.45; margin-top: 4px; }
+  .s10 { justify-content: center; align-items: center; gap: 20px; text-align: center; }
+  .s10 .closing-logo { font-size: 60px; font-weight: 900; letter-spacing: -0.04em; }
+  .s10 .closing-logo span { font-weight: 300; }
+  .s10 .closing-line { font-size: 19px; color: var(--olive-mid); }
+  .s10 .closing-cta { font-size: 14px; font-weight: 600; border-bottom: 2px solid var(--olive); padding-bottom: 2px; }
+  .s10 .corner-br { position: absolute; bottom: 28px; right: 32px; font-size: 11px; color: var(--olive-light); }
+  .brand { position: absolute; top: 22px; left: 32px; font-size: 10px; font-weight: 700; color: var(--olive-mid); }
+</style>
+</head>
+<body>
+
+<!-- SLIDE 1 -->
+<div class="slide s1">
+  <div class="corner-tl">HackDavis 2026 · Social Good</div>
+  <div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px">
+    <div class="logo">fridge<span>bridge</span></div>
+    <div class="tagline">Connecting to food banks without cold calls</div>
+    <div class="event-badge">HackDavis 2026</div>
+  </div>
+  <div class="slide-number">1 / 10</div>
+</div>
+
+<!-- SLIDE 2 -->
+<div class="slide s2">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">The Problem</div>
+  <div class="headline">Food is in the fridge.<br>Help is out there.<br>The bridge is broken.</div></div>
+  <div style="font-size:16px;font-style:italic;color:var(--olive-mid);max-width:600px;line-height:1.6">"I didn't know if the pantry was open, if they had what I needed, or if I'd make the trip for nothing. I didn't want to call and bother them."</div>
+  <div class="stat-row">
+    <div><div class="stat-num">44M</div><div class="stat-label">Americans face food insecurity each year</div></div>
+    <div><div class="stat-num">~60%</div><div class="stat-label">of pantry visits are wasted trips — wrong hours, empty shelves</div></div>
+    <div><div class="stat-num">1 call</div><div class="stat-label">is all it takes — but most people never make it</div></div>
+  </div>
+  <div class="slide-number">2 / 10</div>
+</div>
+
+<!-- SLIDE 3 -->
+<div class="slide s3">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">The Solution</div>
+  <div class="big-answer">We make<br>the call <em>for you.</em></div></div>
+  <div class="descriptor">FridgeBridge scans your fridge, figures out what you need, finds nearby food pantries, and sends an AI voice agent to call them in parallel — so you get a real answer before you ever leave home.</div>
+  <div class="pill-row">
+    <div class="pill">Scan your fridge</div>
+    <div class="pill">Find what's missing</div>
+    <div class="pill">AI calls the pantries</div>
+    <div class="pill">Get your route</div>
+  </div>
+  <div class="slide-number">3 / 10</div>
+</div>
+
+<!-- SLIDE 4 -->
+<div class="slide s4">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">How It Works — 3 Phases</div></div>
+  <div class="steps-grid">
+    <div class="step-card">
+      <div class="step-num">Phase 1</div>
+      <div class="step-title">Fridge Vision + Smart Recipes</div>
+      <div class="step-desc">Snap a photo of your fridge. Gemini identifies every ingredient and flags what's expiring. We suggest 3 recipes and surface exactly what's missing.</div>
+      <div class="step-tech">Gemini 2.0 Flash · Backboard Memory</div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">Phase 2</div>
+      <div class="step-title">Pantry Locator Agent</div>
+      <div class="step-desc">Based on your missing ingredients, we find nearby food pantries using Google Places and rank them by distance, open hours, and past availability.</div>
+      <div class="step-tech">Google Places API · MongoDB Geospatial · Gemini Ranker</div>
+    </div>
+    <div class="step-card">
+      <div class="step-num">Phase 3</div>
+      <div class="step-title">Voice Swarm + Live Results</div>
+      <div class="step-desc">An AI agent calls up to 5 pantries simultaneously, asks about availability and hours, and streams live transcripts to your dashboard and a Google Sheet.</div>
+      <div class="step-tech">ElevenLabs Conversational AI · Twilio · SSE Live Stream</div>
+    </div>
+  </div>
+  <div style="margin-top:12px;font-size:13px;color:var(--olive-mid)">→ Results feed into a <strong>Mapbox-optimized pickup route</strong> — one tap to open in Apple or Google Maps.</div>
+  <div class="slide-number">4 / 10</div>
+</div>
+
+<!-- SLIDE 5 -->
+<div class="slide s5">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">Architecture</div></div>
+  <div class="arch-placeholder">
+    <div class="insert-text">[ Insert Gemini Architecture Diagram Here ]</div>
+    <div class="insert-sub">Next.js · FastAPI · Gemini · ElevenLabs · Twilio · MongoDB · Mapbox · Backboard</div>
+  </div>
+  <div class="slide-number">5 / 10</div>
+</div>
+
+<!-- SLIDE 6 -->
+<div class="slide s6">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">Tech Stack</div></div>
+  <div class="tech-grid">
+    <div class="tech-card"><div class="tech-category">Frontend</div><div class="tech-name">Next.js 15</div><div class="tech-sub">React 19, TypeScript, Tailwind CSS, shadcn/ui, react-map-gl</div></div>
+    <div class="tech-card"><div class="tech-category">AI Vision + Text</div><div class="tech-name">Gemini 2.0 Flash</div><div class="tech-sub">Fridge vision, recipe generation, pantry ranking, call summarization</div></div>
+    <div class="tech-card"><div class="tech-category">Voice AI</div><div class="tech-name">ElevenLabs</div><div class="tech-sub">Conversational AI agent with dynamic variables per pantry call</div></div>
+    <div class="tech-card"><div class="tech-category">Telephony</div><div class="tech-name">Twilio</div><div class="tech-sub">Outbound PSTN calls, TwiML media streams, webhook events</div></div>
+    <div class="tech-card"><div class="tech-category">Backend</div><div class="tech-name">FastAPI</div><div class="tech-sub">Python AI microservice, asyncio parallel call fan-out</div></div>
+    <div class="tech-card"><div class="tech-category">Database</div><div class="tech-name">MongoDB Atlas</div><div class="tech-sub">Geospatial queries, change streams for real-time SSE</div></div>
+    <div class="tech-card"><div class="tech-category">Memory</div><div class="tech-name">Backboard</div><div class="tech-sub">Persistent user memory — diet, staples, fridge history</div></div>
+    <div class="tech-card"><div class="tech-category">Maps + Routing</div><div class="tech-name">Mapbox</div><div class="tech-sub">Interactive map, Directions API for optimized multi-stop route</div></div>
+  </div>
+  <div class="slide-number">6 / 10</div>
+</div>
+
+<!-- SLIDE 7 -->
+<div class="slide s7">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">Why This Matters</div></div>
+  <div class="impact-grid">
+    <div><div class="impact-headline">Zero wasted trips</div><div class="impact-body">Every pantry visit is confirmed before you leave. No more driving across town to a closed door or empty shelf.</div></div>
+    <div><div class="impact-headline">No awkward calls</div><div class="impact-body">Seeking help is already hard. FridgeBridge removes the social barrier — the AI makes the ask so you don't have to.</div></div>
+    <div><div class="impact-headline">Fights food waste too</div><div class="impact-body">Recipes prioritize near-expiry items first, reducing household waste while stretching what families already have.</div></div>
+    <div><div class="impact-headline">Scales to any city</div><div class="impact-body">Built on Google Places + MongoDB geospatial. Any food bank with a phone is instantly reachable — no app installs required.</div></div>
+  </div>
+  <div class="slide-number">7 / 10</div>
+</div>
+
+<!-- SLIDE 8 -->
+<div class="slide s8">
+  <div class="brand">fridgebridge</div>
+  <div class="slide-label">Live Demo</div>
+  <div class="demo-title">See it work<br>right now.</div>
+  <div class="demo-sub">Snap a real fridge photo, pick missing ingredients, watch the AI call two pantries live, and map the optimized route — end to end.</div>
+  <div class="demo-steps">
+    <span>Snap</span><span class="demo-arrow">→</span>
+    <span>Identify</span><span class="demo-arrow">→</span>
+    <span>Locate</span><span class="demo-arrow">→</span>
+    <span>Call</span><span class="demo-arrow">→</span>
+    <span>Route</span>
+  </div>
+  <div class="slide-number">8 / 10</div>
+</div>
+
+<!-- SLIDE 9 -->
+<div class="slide s9">
+  <div class="brand">fridgebridge</div>
+  <div><div class="slide-label">The Team</div></div>
+  <div class="team-grid">
+    <div class="team-card"><div class="team-avatar">S</div><div class="team-name">Sahil</div><div class="team-role">Backend, AI & Voice</div><div class="team-focus">Gemini vision, Groq AI, recipe gen, pantry locator agent, ElevenLabs + Twilio voice swarm</div></div>
+    <div class="team-card"><div class="team-avatar">J</div><div class="team-name">Jay</div><div class="team-role">Frontend</div><div class="team-focus">MongoDB, Backboard memory, UI/UX,ingredient editor, recipe view</div></div>
+    <div class="team-card"><div class="team-avatar">A</div><div class="team-name">Aryan</div><div class="team-role">Infra</div><div class="team-focus">Mapbox map, Gemini API, User Research</div></div>
+  </div>
+  <div class="slide-number">9 / 10</div>
+</div>
+
+<!-- SLIDE 10 -->
+<div class="slide s10">
+  <div class="closing-logo">fridge<span>bridge</span></div>
+  <div class="closing-line">Connecting to food banks without cold calls</div>
+  <!-- <div class="closing-cta">fridgebridge.vercel.app</div> -->
+  <div class="corner-br">HackDavis 2026 · Social Good Track</div>
+  <div class="slide-number">10 / 10</div>
+</div>
+
+</body>
+</html>

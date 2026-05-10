@@ -504,7 +504,7 @@ export function FridgeBridge() {
                     </button>
                   </div>
                 ) : null}
-                <button onClick={() => setStep(1)} className="mt-6 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← Back</button>
+                <button onClick={() => { setStep(1); geoInitiatedRef.current = false; }} className="mt-6 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← Back</button>
               </div>
             ) : (
               <>
@@ -538,7 +538,7 @@ export function FridgeBridge() {
                 <button onClick={callPantries} disabled={selectedPantries.size === 0 || loading} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-1 transition-all disabled:opacity-40" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
                   {loading ? "Deploying agents..." : `Call ${selectedPantries.size} pantries`}
                 </button>
-                <button onClick={() => { setPantries([]); setStep(1); }} className="w-full mt-2 py-2 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← Back</button>
+                <button onClick={() => { setPantries([]); setStep(1); geoInitiatedRef.current = false; }} className="w-full mt-2 py-2 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← Back</button>
               </>
             )}
           </div>
@@ -708,11 +708,11 @@ export function FridgeBridge() {
               )}
 
               <button
-                onClick={() => { setSelectedMeal(viewingMealIdx); closeRecipeDetail(); }}
+                onClick={() => { setSelectedMeal(viewingMealIdx); closeRecipeDetail(); setStep(2); }}
                 className="w-full py-2.5 rounded-full border-2 text-sm font-medium transition-all hover:opacity-80"
                 style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}
               >
-                {selectedMeal === viewingMealIdx ? "✓ Meal selected" : "Find pantries for this meal →"}
+                Find pantries for this meal →
               </button>
             </div>
           </div>

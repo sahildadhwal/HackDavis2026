@@ -81,6 +81,9 @@ export function FridgeBridge() {
   const [recipeDetail, setRecipeDetail] = useState<RecipeDetail | null>(null);
   const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [showAddInput, setShowAddInput] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationDenied, setLocationDenied] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -98,6 +101,31 @@ export function FridgeBridge() {
     wsRef.current = ws;
     return () => ws.close();
   }, [sessionId]);
+
+  // Auto-geolocate when entering the pantries step
+  useEffect(() => {
+    if (step !== 2 || pantries.length > 0 || locating || locationDenied) return;
+    if (!navigator.geolocation) { setLocationDenied(true); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setUserCoords({ lat: latitude, lng: longitude });
+        let loc = `${latitude},${longitude}`;
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+          const d = await r.json();
+          const city = d.address?.city || d.address?.town || d.address?.village || "";
+          const state = d.address?.state_code || d.address?.state || "";
+          if (city) loc = `${city}, ${state}`;
+        } catch { /* use coords fallback */ }
+        setLocation(loc);
+        setLocating(false);
+        findPantries(loc);
+      },
+      () => { setLocating(false); setLocationDenied(true); }
+    );
+  }, [step, pantries.length, locating, locationDenied]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -172,15 +200,16 @@ export function FridgeBridge() {
     return () => clearTimeout(timer);
   }, [suggestMeals, step]);
 
-  const findPantries = async () => {
-    if (!location.trim()) return;
+  const findPantries = async (locationOverride?: string) => {
+    const loc = locationOverride ?? location;
+    if (!loc.trim()) return;
     setLoading(true);
     setError("");
     try {
       const res = await fetch(`${API}/api/find-pantries`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, location }),
+        body: JSON.stringify({ session_id: sessionId, location: loc }),
       });
       const data = await res.json();
       setPantries(data.pantries || []);
@@ -282,6 +311,7 @@ export function FridgeBridge() {
   const resetAll = () => {
     setStep(0); setImage(null); setImagePreview(""); setIngredients([]); setMeals([]);
     setSelectedMeal(null); setPantries([]); setPlan(null); setCallStatuses({}); setError("");
+    setLocation(""); setLocating(false); setLocationDenied(false); setUserCoords(null);
     setViewingMealIdx(null); setRecipeDetail(null);
   };
 
@@ -370,7 +400,7 @@ export function FridgeBridge() {
           <div className="relative z-10 max-w-2xl mx-auto px-6 py-8 animate-fade-up">
             {/* Fridge photo */}
             {imagePreview && (
-              <img src={imagePreview} alt="Fridge" className="w-full rounded-2xl mb-5 object-cover max-h-56 border-2" style={{ borderColor: "#2d1f0e" }} />
+              <img src={imagePreview} alt="Fridge" className="w-full rounded-2xl mb-5 border-2" style={{ borderColor: "#2d1f0e" }} />
             )}
 
             {/* Ingredient pills */}
@@ -421,6 +451,9 @@ export function FridgeBridge() {
                   {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
                   {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
                 </div>
+                <button onClick={() => { setSelectedMeal(i); setStep(2); }} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
+                  find nearby pantries →
+                </button>
                 {selectedMeal === i && (
                   <div className="flex gap-4 mt-3 pt-3 border-t border-neutral-100 animate-fade-up">
                     <div className="flex-1">
@@ -442,23 +475,6 @@ export function FridgeBridge() {
               </div>
             ))}
 
-            {/* Location input */}
-            {selectedMeal !== null && (
-              <div className="mt-4 animate-fade-up">
-                <div className="font-bold text-sm mb-2" style={{ color: "#2d1f0e" }}>Where are you located?</div>
-                <input
-                  className="w-full px-4 py-2.5 border rounded-xl text-sm focus:outline-none bg-white/80 mb-3"
-                  style={{ borderColor: "#2d1f0e55" }}
-                  placeholder="Zip code or city (e.g., Davis, CA)"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && findPantries()}
-                />
-                <button onClick={findPantries} disabled={!location.trim() || loading} className="w-full py-3 rounded-2xl border-2 font-bold text-sm disabled:opacity-40 transition-colors" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", backgroundColor: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                  {loading ? "finding pantries..." : "find food pantries near me"}
-                </button>
-              </div>
-            )}
 
             {error && <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">{error}</div>}
           </div>
@@ -495,6 +511,30 @@ export function FridgeBridge() {
         {/* ─── STEP 2: Select pantries ─── */}
         {step === 2 && (
           <div className="animate-fade-up">
+            {pantries.length === 0 ? (
+              <div className="py-8 text-center">
+                {locating || loading ? (
+                  <p className="text-neutral-500 text-sm animate-pulse">Finding pantries near you...</p>
+                ) : locationDenied ? (
+                  <div>
+                    <p className="text-sm text-neutral-500 mb-4">Location access denied. Enter your location manually:</p>
+                    <input
+                      autoFocus
+                      className="w-full px-4 py-2.5 border border-neutral-200 rounded-xl text-sm focus:outline-none focus:border-green-400 bg-white mb-3"
+                      placeholder="Zip code or city (e.g., Davis, CA)"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && findPantries()}
+                    />
+                    <button onClick={() => findPantries()} disabled={!location.trim()} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
+                      Find food pantries near me
+                    </button>
+                  </div>
+                ) : null}
+                <button onClick={() => setStep(1)} className="mt-4 text-sm text-neutral-400 hover:text-neutral-600 transition-colors">← Back</button>
+              </div>
+            ) : (
+              <div>
             <h2 className="text-2xl font-bold text-neutral-900 mb-1">Nearby pantries</h2>
             <p className="text-sm text-neutral-500 mb-4">Select which pantries to call. Our AI agents will check availability.</p>
 
@@ -509,7 +549,7 @@ export function FridgeBridge() {
 
             {pantries.length > 0 && (
               <div className="mb-4 rounded-xl overflow-hidden border border-neutral-200">
-                <PantryMap pantries={pantries} />
+                <PantryMap pantries={pantries} userCoords={userCoords} />
               </div>
             )}
 
@@ -532,7 +572,9 @@ export function FridgeBridge() {
             <button onClick={callPantries} disabled={selectedPantries.size === 0 || loading} className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold disabled:bg-neutral-300 hover:bg-green-700 transition-colors">
               {loading ? "⏳ Deploying agents..." : `Call ${selectedPantries.size} pantries simultaneously`}
             </button>
-            <button onClick={() => setStep(1)} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">← Back</button>
+            <button onClick={() => { setPantries([]); setStep(1); }} className="w-full mt-2 py-3 rounded-2xl border border-neutral-200 bg-white text-neutral-700 text-sm font-medium hover:bg-neutral-50">← Back</button>
+              </div>
+            )}
           </div>
         )}
 

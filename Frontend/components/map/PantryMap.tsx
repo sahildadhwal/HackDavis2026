@@ -1,6 +1,6 @@
 "use client";
 
-import Map, { Marker, Popup } from "react-map-gl/mapbox";
+import Map, { Marker, Popup, useMap } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useState, useMemo } from "react";
 
@@ -18,6 +18,47 @@ interface Pantry {
 interface PantryMapProps {
   pantries: Pantry[];
   userCoords?: { lat: number; lng: number } | null;
+}
+
+interface MarkersProps {
+  validPantries: Pantry[];
+  userCoords?: { lat: number; lng: number } | null;
+  popupIdx: number | null;
+  setPopupIdx: (i: number | null) => void;
+}
+
+function Markers({ validPantries, userCoords, popupIdx, setPopupIdx }: MarkersProps) {
+  const { current: map } = useMap();
+  if (!map) return null;
+  return (
+    <>
+      {userCoords && (
+        <Marker longitude={userCoords.lng} latitude={userCoords.lat} anchor="center">
+          <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-md" title="Your location" />
+        </Marker>
+      )}
+      {validPantries.map((p, i) => (
+        <Marker key={i} longitude={p.lng!} latitude={p.lat!} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupIdx(i); }}>
+          <div className="text-2xl cursor-pointer hover:scale-110 transition-transform">📍</div>
+        </Marker>
+      ))}
+      {popupIdx !== null && validPantries[popupIdx] && (
+        <Popup
+          longitude={validPantries[popupIdx].lng!}
+          latitude={validPantries[popupIdx].lat!}
+          anchor="top"
+          onClose={() => setPopupIdx(null)}
+          closeOnClick={false}
+        >
+          <div className="p-1">
+            <div className="font-bold text-sm">{validPantries[popupIdx].name}</div>
+            <div className="text-xs text-neutral-500">{validPantries[popupIdx].address}</div>
+            <div className="text-xs text-green-600">{validPantries[popupIdx].phone}</div>
+          </div>
+        </Popup>
+      )}
+    </>
+  );
 }
 
 export function PantryMap({ pantries, userCoords }: PantryMapProps) {
@@ -73,31 +114,12 @@ export function PantryMap({ pantries, userCoords }: PantryMapProps) {
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
       >
-        {userCoords && (
-          <Marker longitude={userCoords.lng} latitude={userCoords.lat} anchor="center">
-            <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-md" title="Your location" />
-          </Marker>
-        )}
-        {validPantries.map((p, i) => (
-          <Marker key={i} longitude={p.lng!} latitude={p.lat!} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupIdx(i); }}>
-            <div className="text-2xl cursor-pointer hover:scale-110 transition-transform">📍</div>
-          </Marker>
-        ))}
-        {popupIdx !== null && validPantries[popupIdx] && (
-          <Popup
-            longitude={validPantries[popupIdx].lng!}
-            latitude={validPantries[popupIdx].lat!}
-            anchor="top"
-            onClose={() => setPopupIdx(null)}
-            closeOnClick={false}
-          >
-            <div className="p-1">
-              <div className="font-bold text-sm">{validPantries[popupIdx].name}</div>
-              <div className="text-xs text-neutral-500">{validPantries[popupIdx].address}</div>
-              <div className="text-xs text-green-600">{validPantries[popupIdx].phone}</div>
-            </div>
-          </Popup>
-        )}
+        <Markers
+          validPantries={validPantries}
+          userCoords={userCoords}
+          popupIdx={popupIdx}
+          setPopupIdx={setPopupIdx}
+        />
       </Map>
     </div>
   );

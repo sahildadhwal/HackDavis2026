@@ -302,19 +302,34 @@ async def twilio_voice_webhook(call_id: str):
     state["status"] = "in_progress"
     await notify_ws(state["session_id"], {"type": "call_update", "call_id": call_id, "pantry": state["pantry"]["name"], "status": "connected", "message": "Agent speaking with pantry..."})
 
-    resp = VoiceResponse()
-    try:
-        if ELEVENLABS_API_KEY:
-            resp.play(await generate_speech(greeting))
-        else:
-            resp.say(greeting, voice="Polly.Joanna")
-    except:
-        resp.say(greeting, voice="Polly.Joanna")
+    if True:
+        resp = VoiceResponse()
+        # default twilio voice (DONT USE, too ROBOTIC)
+        gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
+        gather.say(greeting, voice="Polly.Joanna")
+        resp.append(gather)
+        resp.say("I didn't catch that. Thank you, goodbye.")
+        resp.hangup()
+#   
+    # print(">>> twilio_voice_webhook reached response building", flush=True)
+    # print(f">>> ELEVENLABS_API_KEY set: {bool(ELEVENLABS_API_KEY)}", flush=True)
+    # resp = VoiceResponse()
+    # gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
+    # try:
+    #     if ELEVENLABS_API_KEY:
+    #         gather.say(greeting, voice="Polly.Joanna-Neural")
 
-    gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=8, speech_timeout="auto", language="en-US")
-    resp.append(gather)
-    resp.say("I didn't catch that. Thank you, goodbye.")
-    resp.hangup()
+    #     else:
+    #         print(">>> using Polly fallback", flush=True)
+    #         gather.say(greeting, voice="Polly.Joanna-Neural")
+    # except Exception as e:
+    #     print(f">>> ELEVENLABS ERROR: {e}", flush=True)
+    #     gather.say(greeting, voice="Polly.Joanna-Neural")
+    # resp.append(gather)
+    # print(f">>> XML being returned: {str(resp)}", flush=True)
+    # resp.say("I didn't catch that. Thank you, goodbye.")
+    # resp.hangup()
+
     return HTMLResponse(str(resp), media_type="application/xml")
 
 

@@ -17,9 +17,10 @@ interface Pantry {
 
 interface PantryMapProps {
   pantries: Pantry[];
+  userCoords?: { lat: number; lng: number } | null;
 }
 
-export function PantryMap({ pantries }: PantryMapProps) {
+export function PantryMap({ pantries, userCoords }: PantryMapProps) {
   const [popupIdx, setPopupIdx] = useState<number | null>(null);
 
   const validPantries = useMemo(
@@ -33,6 +34,17 @@ export function PantryMap({ pantries }: PantryMapProps) {
     const avgLng = validPantries.reduce((s, p) => s + (p.lng || 0), 0) / validPantries.length;
     return { lat: avgLat, lng: avgLng };
   }, [validPantries]);
+
+  const bounds = useMemo(() => {
+    const allLats = validPantries.map(p => p.lat!);
+    const allLngs = validPantries.map(p => p.lng!);
+    if (userCoords) { allLats.push(userCoords.lat); allLngs.push(userCoords.lng); }
+    if (allLats.length < 2) return null;
+    return [
+      [Math.min(...allLngs), Math.min(...allLats)],
+      [Math.max(...allLngs), Math.max(...allLats)],
+    ] as [[number, number], [number, number]];
+  }, [validPantries, userCoords]);
 
   if (!token) {
     return (
@@ -54,10 +66,18 @@ export function PantryMap({ pantries }: PantryMapProps) {
     <div className="h-64">
       <Map
         mapboxAccessToken={token}
-        initialViewState={{ longitude: center.lng, latitude: center.lat, zoom: 11 }}
+        initialViewState={bounds
+          ? { bounds, fitBoundsOptions: { padding: 60 } }
+          : { longitude: center.lng, latitude: center.lat, zoom: 13 }
+        }
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
       >
+        {userCoords && (
+          <Marker longitude={userCoords.lng} latitude={userCoords.lat} anchor="center">
+            <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-md" title="Your location" />
+          </Marker>
+        )}
         {validPantries.map((p, i) => (
           <Marker key={i} longitude={p.lng!} latitude={p.lat!} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupIdx(i); }}>
             <div className="text-2xl cursor-pointer hover:scale-110 transition-transform">📍</div>

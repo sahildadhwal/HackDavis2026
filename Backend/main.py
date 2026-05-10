@@ -316,7 +316,9 @@ async def call_pantries(request: Request):
     session_id = body.get("session_id", "")
     pantries = body.get("pantries", [])
     missing_ingredients = body.get("missing_ingredients", [])
+
     selected_meal = body.get("selected_meal", "")
+    print(f">>> TWILIO configured: SID={bool(TWILIO_ACCOUNT_SID)} AUTH={bool(TWILIO_AUTH_TOKEN)}", flush=True)
 
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
         return JSONResponse(status_code=400, content={"error": "Twilio not configured"})
@@ -345,8 +347,10 @@ async def call_pantries(request: Request):
                 call_ids.append(call_id)
                 await notify_ws(session_id, {"type": "call_started", "call_id": call_id, "pantry": pantry["name"], "status": "ringing"})
             except Exception as e:
+                print(f">>> TWILIO CALL ERROR: {e}", flush=True)
                 call_states[call_id]["status"] = "failed"
                 await notify_ws(session_id, {"type": "call_error", "call_id": call_id, "pantry": pantry["name"], "error": str(e)})
+    return {"call_ids": call_ids}
 
 
 @app.api_route("/api/twilio/voice/{call_id}", methods=["GET", "POST"])

@@ -80,7 +80,7 @@ export function PantryPal() {
     const ws = new WebSocket(`${API.replace("http", "ws")}/ws/${sessionId}`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setCallStatuses((prev) => {
+      setCallStatuses((prev: Record<string, CallStatus>) => {
         const key = data.pantry || data.call_id;
         return { ...prev, [key]: { ...(prev[key] || {}), ...data } };
       });

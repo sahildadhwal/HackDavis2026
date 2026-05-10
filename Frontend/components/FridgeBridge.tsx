@@ -70,7 +70,7 @@ export function FridgeBridge() {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [selectedMeal, setSelectedMeal] = useState<number | null>(null);
   const [specificRequest, setSpecificRequest] = useState("");
-  const [location, setLocation] = useState("");
+  const [location, setLocation] = useState("95616");
   const [pantries, setPantries] = useState<Pantry[]>([]);
   const [selectedPantries, setSelectedPantries] = useState<Set<number>>(new Set());
   const [callStatuses, setCallStatuses] = useState<Record<string, CallStatus>>({});
@@ -95,7 +95,7 @@ export function FridgeBridge() {
     const ws = new WebSocket(`${API.replace("http", "ws")}/ws/${sessionId}`);
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setCallStatuses((prev) => {
+      setCallStatuses((prev: Record<string, CallStatus>) => {
         const key = data.pantry || data.call_id;
         return { ...prev, [key]: { ...(prev[key] || {}), ...data } };
       });
@@ -126,7 +126,8 @@ export function FridgeBridge() {
         setLocating(false);
         findPantries(loc);
       },
-      () => { setLocating(false); setLocationDenied(true); }
+      () => { setLocating(false); setLocationDenied(true); findPantries("95616"); }
+
     );
   }, [step, pantries.length, locationDenied]);
 
@@ -370,34 +371,18 @@ export function FridgeBridge() {
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageSelect} className="hidden" />
 
-            {imagePreview ? (
-              <div className="flex gap-3 w-72">
-                <button
-                  onClick={() => { setImage(null); setImagePreview(""); }}
-                  className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium bg-transparent hover:bg-white/30 transition-colors"
-                  style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)" }}
-                >
-                  Retake
-                </button>
-                <button
-                  onClick={analyzeFridge}
-                  disabled={loading}
-                  className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50"
-                  style={{ backgroundColor: "#2d1f0e", borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)" }}
-                >
-                  {loading ? "Analyzing..." : "Analyze →"}
-                </button>
-              </div>
-            ) : (
+            {imagePreview && (
               <button
-                onClick={() => { setSessionId(crypto.randomUUID()); setStep(1); }}
-                className="w-[32rem] py-2.5 rounded-full border-2 text-sm font-medium transition-colors"
-                style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}
+                onClick={analyzeFridge}
+                disabled={loading}
+                className="w-72 py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50"
+                style={{ backgroundColor: "#2d1f0e", borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)" }}
               >
-                Or type what you have...
+                {loading ? "Analyzing..." : "Analyze →"}
               </button>
             )}
-          </div>
+
+            </div>
         </div>
       )}
 
@@ -459,19 +444,10 @@ export function FridgeBridge() {
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {meals.map((meal, i) => (
-                  <div key={i} className="p-4 rounded-2xl border-2 flex flex-col" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }}>
-                    <div className="font-medium text-sm mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
+                  <div key={i} className="p-4 rounded-2xl border-2 flex flex-col cursor-pointer hover:opacity-80 transition-opacity" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }} onClick={() => { setSelectedMeal(i); setStep(2); }}>                    <div className="font-medium text-sm mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
                     <div className="text-xs mb-3 flex flex-wrap gap-x-2 flex-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
                       {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
                       {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <button onClick={() => openRecipeDetail(i)} className="text-xs transition-colors hover:opacity-70 text-left" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                        How to cook →
-                      </button>
-                      <button onClick={() => { setSelectedMeal(i); setStep(2); }} className="text-xs transition-colors hover:opacity-70 text-left" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                        Find pantries →
-                      </button>
                     </div>
                   </div>
                 ))}

@@ -324,17 +324,25 @@ export function FridgeBridge() {
       {step === 0 && (
         <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
           {/* Bottom-left plants */}
-          <img src="/flower2.png" alt="" className="absolute bottom-0 left-0 w-64 h-auto pointer-events-none select-none" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
-          <img src="/flower3.png" alt="" className="absolute bottom-0 left-0 w-60 h-auto pointer-events-none select-none" style={{ transform: "rotate(25deg) translateX(30%)" }} />
+          <div className="absolute bottom-0 left-0 pointer-events-none select-none flower-from-left">
+            <img src="/flower2.png" alt="" className="w-64 h-auto" style={{ transform: "rotate(15deg) translate(-10%, 15%)" }} />
+          </div>
+          <div className="absolute bottom-0 left-0 pointer-events-none select-none flower-from-left" style={{ animationDelay: "0.08s" }}>
+            <img src="/flower3.png" alt="" className="w-60 h-auto" style={{ transform: "rotate(25deg) translateX(30%)" }} />
+          </div>
 
           {/* Top-right plant */}
-          <img src="/flower4.png" alt="" className="absolute top-0 right-0 w-56 h-auto pointer-events-none select-none" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
+          <div className="absolute top-0 right-0 pointer-events-none select-none flower-from-top-right">
+            <img src="/flower4.png" alt="" className="w-56 h-auto" style={{ transform: "translate(-15%, -15%) rotate(230deg)" }} />
+          </div>
 
           {/* Bottom-right plant */}
-          <img src="/flower1.png" alt="" className="absolute bottom-0 right-0 w-72 h-auto pointer-events-none select-none" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
+          <div className="absolute bottom-0 right-0 pointer-events-none select-none flower-from-right">
+            <img src="/flower1.png" alt="" className="w-72 h-auto" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
+          </div>
 
           {/* Main content */}
-          <div className="relative z-10 flex flex-col items-center text-center px-8">
+          <div className="intro-content relative z-10 flex flex-col items-center text-center px-8">
             <h1 className="mb-7 leading-none" style={{ fontSize: "clamp(2.8rem, 12vw, 5rem)", color: "#2d1f0e", fontFamily: "var(--font-krona)", letterSpacing: "-0.05em", WebkitTextStroke: "1.5px #2d1f0e" }}>
               <span style={{ position: "relative", top: "-0.35em" }}>fridge</span>
               <span>bridge</span>

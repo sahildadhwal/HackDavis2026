@@ -152,25 +152,7 @@ FridgeBridge runs in three main phases.
 ## Technical Architecture
 
 FridgeBridge is designed as a full-stack, AI-native application with a clear separation between user interface, AI orchestration, external service integrations, real-time updates, and persistence.
-
-```mermaid
-flowchart TD
-    A[User uploads fridge photo] --> B[Next.js Frontend]
-    B --> C[FastAPI Backend]
-    C --> D[Gemini Flash Vision]
-    D --> E[Ingredient Extraction]
-    E --> F[Recipe + Missing Ingredient Engine]
-    F --> G[Google Places Pantry Search]
-    G --> H[MongoDB Pantry Ranking]
-    H --> I[Async Voice Swarm]
-    I --> J[Twilio Outbound Calls]
-    J --> K[ElevenLabs Voice Agent]
-    K --> L[Call Transcript + Structured Result]
-    L --> M[MongoDB Change Streams]
-    M --> N[SSE Live Dashboard]
-    L --> O[Mapbox Route Optimization]
-    O --> P[Pickup Route]
-```
+![FridgeBridge Technical Architecture](./docs/architecture.png)
 
 ### Frontend Layer
 

@@ -75,52 +75,46 @@ app.mount("/audio", StaticFiles(directory="audio"), name="audio")
 async def call_claude(messages: list, system: str = "", max_tokens: int = 1024) -> str:
     async with httpx.AsyncClient(timeout=60) as client:
         body = {
-            "model": "claude-haiku-4-5-20251001",
+            "model": "llama-3.3-70b-versatile",
             "max_tokens": max_tokens,
             "messages": messages,
         }
         if system:
-            body["system"] = system
+            body["messages"] = [{"role": "system", "content": system}] + messages
         resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
+            "https://api.groq.com/openai/v1/chat/completions",
             headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
+                "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
+                "Content-Type": "application/json",
             },
             json=body,
         )
         data = resp.json()
-        print("ANTHROPIC RESPONSE:", data, flush=True)
-        if "error" in data:
-            raise RuntimeError(f"Anthropic API error: {data['error'].get('message', data['error'])}")
-        return data["content"][0]["text"]
-
+        print("GROQ RESPONSE:", data, flush=True)
+        # return data["content"][0]["text"]
+        return data["choices"][0]["message"]["content"]
 
 async def call_claude_vision(image_b64: str, media_type: str, prompt: str) -> str:
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
+            "https://api.groq.com/openai/v1/chat/completions",
             headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
+                "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
+                "Content-Type": "application/json",
             },
             json={
-                "model": "claude-haiku-4-5-20251001",
+                "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+                
                 "max_tokens": 1024,
                 "messages": [{"role": "user", "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
+                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}},
                     {"type": "text", "text": prompt},
                 ]}],
             },
         )
         data = resp.json()
-        print("ANTHROPIC RESPONSE:", data, flush=True)
-        if "error" in data:
-            raise RuntimeError(f"Anthropic API error: {data['error'].get('message', data['error'])}")
-        return data["content"][0]["text"]
-
+        print("GROQ RESPONSE:", data, flush=True)
+        return data["choices"][0]["message"]["content"] 
     
 async def generate_speech(text: str) -> str:
     async with httpx.AsyncClient(timeout=30) as client:

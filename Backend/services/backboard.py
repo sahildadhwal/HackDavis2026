@@ -1,5 +1,6 @@
 import os
 import sys
+from typing import Optional
 
 # backboard's __init__.py calls parse_args() at import time and will choke on
 # uvicorn's CLI arguments. Shield it by temporarily clearing sys.argv.
@@ -8,7 +9,7 @@ sys.argv = sys.argv[:1]
 from backboard.client import BackboardClient
 sys.argv = _argv
 
-_client: BackboardClient | None = None
+_client: Optional[BackboardClient] = None
 
 
 def _get_client() -> BackboardClient:
@@ -60,7 +61,7 @@ async def remember_fact(user_id: str, fact: str) -> None:
         print(f"Backboard remember error: {e}")
 
 
-async def get_user_memory(user_id: str) -> list[str]:
+async def get_user_memory(user_id: str) -> list:
     """Return all memory items stored for this user."""
     if not user_id:
         return []

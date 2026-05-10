@@ -1,11 +1,12 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from typing import Optional
 import os
 
 load_dotenv()
 
-_client: AsyncIOMotorClient | None = None
+_client: Optional[AsyncIOMotorClient] = None
 
 
 def get_db():
@@ -24,7 +25,7 @@ async def disconnect():
         _client.close()
 
 
-async def find_pantries_near(lat: float, lng: float, radius_km: float = 20) -> list[dict]:
+async def find_pantries_near(lat: float, lng: float, radius_km: float = 20) -> list:
     db = get_db()
     cursor = db["pantries"].find({
         "location": {
@@ -49,7 +50,7 @@ async def find_pantries_near(lat: float, lng: float, radius_km: float = 20) -> l
     return pantries
 
 
-async def get_backboard_assistant_id(user_id: str) -> str | None:
+async def get_backboard_assistant_id(user_id: str) -> Optional[str]:
     db = get_db()
     doc = await db["user_assistants"].find_one({"user_id": user_id})
     return doc["assistant_id"] if doc else None
@@ -64,7 +65,7 @@ async def save_backboard_assistant_id(user_id: str, assistant_id: str) -> None:
     )
 
 
-async def insert_pantries(pantries: list[dict]) -> int:
+async def insert_pantries(pantries: list) -> int:
     """Insert pantries that don't already exist (matched by name). Returns count inserted."""
     db = get_db()
     inserted = 0
@@ -86,7 +87,7 @@ async def log_call(pantry_name: str, available: list, unavailable: list):
     })
 
 
-async def get_recent_notes(pantry_names: list[str]) -> dict[str, str]:
+async def get_recent_notes(pantry_names: list) -> dict:
     if not pantry_names:
         return {}
     db = get_db()

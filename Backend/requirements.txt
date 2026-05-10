@@ -6,3 +6,5 @@ twilio
 python-multipart
 gspread
 google-auth
+motor
+backboard-sdk

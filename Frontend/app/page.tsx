@@ -1,5 +1,5 @@
-import { PantryPal } from "@/components/PantryPal";
+import { FridgeBridge } from "@/components/FridgeBridge";
 
 export default function Home() {
-  return <PantryPal />;
+  return <FridgeBridge />;
 }

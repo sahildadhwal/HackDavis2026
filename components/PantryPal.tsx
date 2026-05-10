@@ -69,7 +69,7 @@ export function PantryPal() {
   const [callStatuses, setCallStatuses] = useState<Record<string, CallStatus>>({});
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
-  const [demoMode, setDemoMode] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);

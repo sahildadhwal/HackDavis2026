@@ -29,8 +29,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse, Gather
-from services.mongo import connect, disconnect, find_pantries_near, log_call, get_recent_notes
-from services.backboard import remember_event, get_user_memory
+from services.mongo import connect, disconnect, find_pantries_near, insert_pantries, log_call, get_recent_notes
+from services.backboard import remember_fact, get_user_memory
 
 load_dotenv()
 
@@ -209,10 +209,11 @@ async def suggest_meals(request: Request):
 
     extra = f"\n\nThe user specifically wants: {specific_request}. Prioritize this." if specific_request else ""
 
+    personalized_field = ', "personalized_reason": "one short phrase explaining why this suits the user, or null"' if user_memories else ""
     result = await call_claude(
         [{"role": "user", "content": f"""Given these ingredients: {json.dumps(ingredients)}{extra}
 Suggest 3-5 meals. For each, list what they have and what's missing.
-Return ONLY JSON: {{"meals": [{{"name": "...", "description": "...", "have": [...], "missing": [...], "difficulty": "easy|medium|hard", "time_minutes": 30}}]}}"""}],
+Return ONLY JSON: {{"meals": [{{"name": "...", "description": "...", "have": [...], "missing": [...], "difficulty": "easy|medium|hard", "time_minutes": 30{personalized_field}}}]}}"""}],
         system=f"Helpful cooking assistant for budget-friendly meals. Return only JSON.{memory_block}"
     )
 
@@ -225,6 +226,9 @@ Return ONLY JSON: {{"meals": [{{"name": "...", "description": "...", "have": [..
         sessions[session_id]["meals"] = data.get("meals", [])
 
     data["personalized"] = len(user_memories) > 0
+    data["memories_used"] = user_memories
+    if user_memories:
+        print(f"suggest-meals: injecting {len(user_memories)} memories: {user_memories}")
     return data
 
 
@@ -244,6 +248,39 @@ async def find_pantries(request: Request):
             pass
 
     pantries = await find_pantries_near(lat, lng)
+
+    if not pantries:
+        # No seeded data for this area — ask Claude and cache results in MongoDB
+        location_label = location if location else f"{lat},{lng}"
+        ai_result = await call_claude(
+            [{"role": "user", "content": f"""Find 4-6 real food banks or food pantries near {location_label} (approx coordinates: {lat}, {lng}).
+Return ONLY JSON with this exact shape:
+{{"pantries": [{{"name": "...", "address": "full street address", "phone": "...", "hours": "...", "notes": "...", "lat": 0.0, "lng": 0.0}}]}}
+Use real organization names and addresses. Estimate lat/lng from the address as accurately as possible."""}],
+            system="You are a helpful assistant that finds food assistance resources. Return only valid JSON.",
+            max_tokens=2048,
+        )
+        try:
+            ai_data = parse_json(ai_result)
+            new_pantries = ai_data.get("pantries", [])
+            docs = [
+                {
+                    "name": p["name"],
+                    "address": p.get("address", ""),
+                    "phone": p.get("phone", ""),
+                    "hours": p.get("hours", ""),
+                    "notes": p.get("notes", ""),
+                    "location": {"type": "Point", "coordinates": [p["lng"], p["lat"]]},
+                }
+                for p in new_pantries
+                if p.get("lat") and p.get("lng")
+            ]
+            if docs:
+                inserted = await insert_pantries(docs)
+                print(f"AI fetched {len(docs)} pantries, inserted {inserted} new ones.")
+                pantries = await find_pantries_near(lat, lng)
+        except Exception as e:
+            print(f"AI pantry fetch error: {e}")
 
     # Attach recent call history notes
     names = [p["name"] for p in pantries]
@@ -560,8 +597,27 @@ async def remember(request: Request):
     user_id = body.get("user_id", "")
     event = body.get("event", "")
     if user_id and event:
-        asyncio.create_task(remember_event(user_id, event))
+        asyncio.create_task(_distill_and_remember(user_id, event))
     return {"ok": True}
+
+
+async def _distill_and_remember(user_id: str, event: str):
+    try:
+        insight = await call_claude(
+            [{"role": "user", "content": event}],
+            system=(
+                "Extract 1-2 short preference statements about this user for future meal suggestions. "
+                "Focus on: cuisine style, difficulty preference, ingredients they regularly have or lack. "
+                "Under 12 words each. Return only the statements, one per line, no bullets or labels."
+            ),
+            max_tokens=80,
+        )
+        for line in insight.strip().splitlines():
+            line = line.strip(" -•*")
+            if line:
+                await remember_fact(user_id, line)
+    except Exception as e:
+        print(f"Distill error: {e}")
 
 
 @app.get("/api/memory/{user_id}")

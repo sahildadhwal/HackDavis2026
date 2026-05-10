@@ -41,6 +41,7 @@ interface Meal {
   missing: string[];
   difficulty: string;
   time_minutes: number;
+  personalized_reason?: string | null;
 }
 
 interface Pantry {
@@ -218,7 +219,11 @@ export function FridgeBridge() {
         setLocating(false);
         findPantries(loc);
       },
-      () => { setLocating(false); setLocationDenied(true); findPantries("95616"); }
+      () => {
+        setLocating(false);
+        setLocationDenied(true);
+        findPantries("95616");
+      },
     );
   }, [step, pantries.length, locationDenied]);
 
@@ -466,7 +471,7 @@ export function FridgeBridge() {
           className="text-xs mb-2"
           style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}
         >
-          Memory ({memories.length})
+          Your preferences
         </div>
         {memories.length === 0 ? (
           <div
@@ -613,13 +618,17 @@ export function FridgeBridge() {
                 onClick={analyzeFridge}
                 disabled={loading}
                 className="w-72 py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50"
-                style={{ backgroundColor: "#2d1f0e", borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)" }}
+                style={{
+                  backgroundColor: "#2d1f0e",
+                  borderColor: "#2d1f0e",
+                  color: "#FCEEAD",
+                  fontFamily: "var(--font-krona)",
+                }}
               >
                 {loading ? "Analyzing..." : "Analyze →"}
               </button>
             )}
-
-            </div>
+          </div>
         </div>
       )}
 
@@ -754,18 +763,11 @@ export function FridgeBridge() {
             </div>
 
             {/* Recipes */}
-            <div className="flex items-center gap-2 mb-3">
-              <div
-                className="text-xl"
-                style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}
-              >
-                Recipes you can make
-              </div>
-              {personalized && (
-                <span className="text-xs px-2 py-0.5 rounded-full border" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.5)" }}>
-                  ✨ personalized
-                </span>
-              )}
+            <div
+              className="text-xl mb-3"
+              style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}
+            >
+              Recipes you can make
             </div>
             {loading ? (
               <div className="text-sm text-neutral-400 italic py-2">
@@ -774,10 +776,47 @@ export function FridgeBridge() {
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {meals.map((meal, i) => (
-                  <div key={i} className="p-4 rounded-2xl border-2 flex flex-col cursor-pointer hover:opacity-80 transition-opacity" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }} onClick={() => { setSelectedMeal(i); setStep(2); }}>                    <div className="font-medium text-sm mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
-                    <div className="text-xs mb-3 flex flex-wrap gap-x-2 flex-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
-                      {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
-                      {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
+                  <div
+                    key={i}
+                    className="p-4 rounded-2xl border-2 flex flex-col cursor-pointer hover:opacity-80 transition-opacity"
+                    style={{
+                      borderColor: "#2d1f0e",
+                      backgroundColor: "rgba(255,255,255,0.45)",
+                    }}
+                    onClick={() => {
+                      rememberRecipe(i);
+                      setSelectedMeal(i);
+                      setStep(2);
+                    }}
+                  >
+                    {" "}
+                    <div
+                      className="font-medium text-sm mb-1"
+                      style={{
+                        color: "#2d1f0e",
+                        fontFamily: "var(--font-krona)",
+                      }}
+                    >
+                      {meal.name}
+                    </div>
+                    {meal.personalized_reason && (
+                      <div className="text-xs mb-1 italic" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>
+                        {meal.personalized_reason}
+                      </div>
+                    )}
+                    <div
+                      className="text-xs mb-3 flex flex-wrap gap-x-2 flex-1"
+                      style={{
+                        color: "#2d1f0e99",
+                        fontFamily: "var(--font-libertinus)",
+                      }}
+                    >
+                      {meal.have?.map((item) => (
+                        <span key={item}>✓ {item}</span>
+                      ))}
+                      {meal.missing?.map((item) => (
+                        <span key={item}>✗ {item}</span>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -1530,8 +1569,7 @@ export function FridgeBridge() {
 
               <button
                 onClick={() => {
-                  if (viewingMealIdx !== null)
-                    rememberRecipe(viewingMealIdx);
+                  if (viewingMealIdx !== null) rememberRecipe(viewingMealIdx);
                   setSelectedMeal(viewingMealIdx);
                   closeRecipeDetail();
                   setStep(2);

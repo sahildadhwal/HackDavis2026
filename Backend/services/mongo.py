@@ -49,6 +49,33 @@ async def find_pantries_near(lat: float, lng: float, radius_km: float = 20) -> l
     return pantries
 
 
+async def get_backboard_assistant_id(user_id: str) -> str | None:
+    db = get_db()
+    doc = await db["user_assistants"].find_one({"user_id": user_id})
+    return doc["assistant_id"] if doc else None
+
+
+async def save_backboard_assistant_id(user_id: str, assistant_id: str) -> None:
+    db = get_db()
+    await db["user_assistants"].update_one(
+        {"user_id": user_id},
+        {"$set": {"assistant_id": assistant_id}},
+        upsert=True,
+    )
+
+
+async def insert_pantries(pantries: list[dict]) -> int:
+    """Insert pantries that don't already exist (matched by name). Returns count inserted."""
+    db = get_db()
+    inserted = 0
+    for p in pantries:
+        exists = await db["pantries"].find_one({"name": p["name"]})
+        if not exists:
+            await db["pantries"].insert_one(p)
+            inserted += 1
+    return inserted
+
+
 async def log_call(pantry_name: str, available: list, unavailable: list):
     db = get_db()
     await db["call_history"].insert_one({

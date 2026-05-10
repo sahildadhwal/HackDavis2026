@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 
 const PantryMap = dynamic(() => import("@/components/map/PantryMap").then(m => m.PantryMap), {
@@ -45,6 +45,12 @@ interface CallStatus {
   };
 }
 
+interface RecipeDetail {
+  steps: string[];
+  tips: string[];
+  servings: string;
+}
+
 interface Plan {
   plan: { pantry_name: string; address: string; items_to_get: string[]; visit_order: number }[];
   still_missing: string[];
@@ -71,6 +77,9 @@ export function FridgeBridge() {
   const [loading, setLoading] = useState(false);
   const [demoMode, setDemoMode] = useState(true);
   const [error, setError] = useState("");
+  const [viewingMealIdx, setViewingMealIdx] = useState<number | null>(null);
+  const [recipeDetail, setRecipeDetail] = useState<RecipeDetail | null>(null);
+  const [loadingRecipe, setLoadingRecipe] = useState(false);
   const [showAddInput, setShowAddInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -247,9 +256,33 @@ export function FridgeBridge() {
   const allCallsDone = Object.values(callStatuses).length > 0 &&
     Object.values(callStatuses).every((s) => s.type === "call_complete" || s.type === "call_error");
 
+  const openRecipeDetail = async (idx: number) => {
+    const meal = meals[idx];
+    setViewingMealIdx(idx);
+    setRecipeDetail(null);
+    setLoadingRecipe(true);
+    try {
+      const res = await fetch(`${API}/api/recipe-steps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meal_name: meal.name, have: meal.have, missing: meal.missing, time_minutes: meal.time_minutes }),
+      });
+      setRecipeDetail(await res.json());
+    } catch {
+      setRecipeDetail({ steps: ["Could not load steps. Please try again."], tips: [], servings: "" });
+    }
+    setLoadingRecipe(false);
+  };
+
+  const closeRecipeDetail = () => {
+    setViewingMealIdx(null);
+    setRecipeDetail(null);
+  };
+
   const resetAll = () => {
     setStep(0); setImage(null); setImagePreview(""); setIngredients([]); setMeals([]);
     setSelectedMeal(null); setPantries([]); setPlan(null); setCallStatuses({}); setError("");
+    setViewingMealIdx(null); setRecipeDetail(null);
   };
 
   return (
@@ -388,9 +421,24 @@ export function FridgeBridge() {
                   {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
                   {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
                 </div>
-                <button onClick={() => setSelectedMeal(i)} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                  find nearby pantries →
-                </button>
+                {selectedMeal === i && (
+                  <div className="flex gap-4 mt-3 pt-3 border-t border-neutral-100 animate-fade-up">
+                    <div className="flex-1">
+                      <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">✓ You have</div>
+                      {meal.have?.map((item, j) => <div key={j} className="text-sm text-green-600">{item}</div>)}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs uppercase tracking-wider text-neutral-400 mb-1">✗ Missing</div>
+                      {meal.missing?.map((item, j) => <div key={j} className="text-sm text-red-500">{item}</div>)}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openRecipeDetail(i); }}
+                      className="self-end px-3 py-2 bg-green-600 text-white text-xs font-bold rounded-xl hover:bg-green-700 transition-colors whitespace-nowrap"
+                    >
+                      📖 How to cook
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
 
@@ -577,8 +625,94 @@ export function FridgeBridge() {
             </button>
           </div>
         )}
-          </main>
-        </>
+      </main>
+
+      {/* ─── Recipe Detail Modal ─── */}
+      {viewingMealIdx !== null && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={closeRecipeDetail}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-lg bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto shadow-2xl animate-fade-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full bg-neutral-200" />
+            </div>
+
+            <div className="px-5 pb-8 pt-3">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1 pr-3">
+                  <h3 className="text-xl font-bold text-neutral-900">{meals[viewingMealIdx]?.name}</h3>
+                  <p className="text-sm text-neutral-500 mt-1">{meals[viewingMealIdx]?.description}</p>
+                  <div className="flex gap-3 mt-2 text-xs text-neutral-400">
+                    <span>⏱ {meals[viewingMealIdx]?.time_minutes} min</span>
+                    <span>📊 {meals[viewingMealIdx]?.difficulty}</span>
+                    {recipeDetail?.servings && <span>🍽 {recipeDetail.servings}</span>}
+                  </div>
+                </div>
+                <button onClick={closeRecipeDetail} className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 text-lg font-light flex-shrink-0">
+                  ×
+                </button>
+              </div>
+
+              {/* Ingredients */}
+              <div className="flex gap-3 mb-5">
+                <div className="flex-1 p-3 bg-green-50 rounded-xl">
+                  <div className="text-xs uppercase tracking-wider text-green-600 font-medium mb-2">✓ You have</div>
+                  {meals[viewingMealIdx]?.have?.map((item, j) => (
+                    <div key={j} className="text-sm text-green-700">{item}</div>
+                  ))}
+                </div>
+                {meals[viewingMealIdx]?.missing?.length > 0 && (
+                  <div className="flex-1 p-3 bg-red-50 rounded-xl">
+                    <div className="text-xs uppercase tracking-wider text-red-400 font-medium mb-2">✗ Missing</div>
+                    {meals[viewingMealIdx]?.missing?.map((item, j) => (
+                      <div key={j} className="text-sm text-red-500">{item}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Steps */}
+              <div className="mb-4">
+                <div className="text-sm font-bold text-neutral-900 mb-3">Step-by-step instructions</div>
+                {loadingRecipe ? (
+                  <div className="flex flex-col gap-2">
+                    {[1, 2, 3, 4].map((n) => (
+                      <div key={n} className="h-10 bg-neutral-100 rounded-xl animate-pulse" />
+                    ))}
+                  </div>
+                ) : recipeDetail?.steps?.map((step, j) => (
+                  <div key={j} className="flex gap-3 mb-3">
+                    <span className="w-6 h-6 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                      {j + 1}
+                    </span>
+                    <p className="text-sm text-neutral-700 leading-relaxed">{step.replace(/^Step\s*\d+[:.]\s*/i, "")}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tips */}
+              {recipeDetail?.tips && recipeDetail.tips.length > 0 && (
+                <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl mb-5">
+                  <div className="text-xs uppercase tracking-wider text-amber-600 font-medium mb-2">💡 Tips</div>
+                  {recipeDetail.tips.map((tip, j) => (
+                    <div key={j} className="text-sm text-amber-700 mb-1">• {tip}</div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => { setSelectedMeal(viewingMealIdx); closeRecipeDetail(); }}
+                className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold hover:bg-green-700 transition-colors"
+              >
+                {selectedMeal === viewingMealIdx ? "✓ This meal is selected" : "Cook this meal"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

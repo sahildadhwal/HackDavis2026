@@ -341,7 +341,7 @@ export function FridgeBridge() {
             </h1>
 
             <p className="text-3xl mb-12 leading-tight" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)", letterSpacing: "-0.05em" }}>
-              snap your fridge. we&apos;ll find a meal<br />
+              Snap your fridge. We&apos;ll find a meal<br />
               and call nearby pantries for what&apos;s missing.
             </p>
 
@@ -368,7 +368,7 @@ export function FridgeBridge() {
                   className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium bg-transparent hover:bg-white/30 transition-colors"
                   style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)" }}
                 >
-                  retake
+                  Retake
                 </button>
                 <button
                   onClick={analyzeFridge}
@@ -376,7 +376,7 @@ export function FridgeBridge() {
                   className="flex-1 py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50"
                   style={{ backgroundColor: "#2d1f0e", borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)" }}
                 >
-                  {loading ? "analyzing..." : "analyze →"}
+                  {loading ? "Analyzing..." : "Analyze →"}
                 </button>
               </div>
             ) : (
@@ -385,7 +385,7 @@ export function FridgeBridge() {
                 className="w-[32rem] py-2.5 rounded-full border-2 text-sm font-medium transition-colors"
                 style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}
               >
-                or type what you have...
+                Or type what you have...
               </button>
             )}
           </div>
@@ -426,14 +426,14 @@ export function FridgeBridge() {
                 />
               ) : (
                 <button onClick={() => setShowAddInput(true)} className="px-3 py-1.5 rounded-full border-2 text-sm font-medium transition-colors hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>
-                  + add more
+                  + Add more
                 </button>
               )}
             </div>
 
             {/* Quick add staples */}
             <div className="mb-5">
-              <div className="text-xl mb-2" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>quick add pantry staples</div>
+              <div className="text-xl mb-2" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Quick add pantry staples</div>
               <div className="flex flex-wrap gap-1.5">
                 {STAPLES.map((s) => (
                   <button key={s} onClick={() => toggleStaple(s)} className="px-3 py-1 rounded-full border-2 text-xs font-medium transition-colors hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: addedStaples.has(s) ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.45)" }}>
@@ -444,26 +444,30 @@ export function FridgeBridge() {
             </div>
 
             {/* Recipes */}
-            <div className="text-xl mb-3" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>recipes you can make</div>
+            <div className="text-xl mb-3" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Recipes you can make</div>
             {loading ? (
-              <div className="text-sm text-neutral-400 italic py-2">finding recipes...</div>
-            ) : meals.map((meal, i) => (
-              <div key={i} className="p-4 mb-2 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }}>
-                <div className="font-medium text-base mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
-                <div className="text-sm mb-3 flex flex-wrap gap-x-2" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
-                  {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
-                  {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
-                </div>
-                <div className="flex items-center gap-4">
-                  <button onClick={() => openRecipeDetail(i)} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                    how to cook →
-                  </button>
-                  <button onClick={() => { setSelectedMeal(i); setStep(2); }} className="text-sm transition-colors hover:opacity-70" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
-                    find pantries →
-                  </button>
-                </div>
+              <div className="text-sm text-neutral-400 italic py-2">Finding recipes...</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {meals.map((meal, i) => (
+                  <div key={i} className="p-4 rounded-2xl border-2 flex flex-col" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }}>
+                    <div className="font-medium text-sm mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{meal.name}</div>
+                    <div className="text-xs mb-3 flex flex-wrap gap-x-2 flex-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
+                      {meal.have?.map(item => <span key={item}>✓ {item}</span>)}
+                      {meal.missing?.map(item => <span key={item}>✗ {item}</span>)}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <button onClick={() => openRecipeDetail(i)} className="text-xs transition-colors hover:opacity-70 text-left" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
+                        How to cook →
+                      </button>
+                      <button onClick={() => { setSelectedMeal(i); setStep(2); }} className="text-xs transition-colors hover:opacity-70 text-left" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
+                        Find pantries →
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
 
 
             {error && <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">{error}</div>}
@@ -482,10 +486,10 @@ export function FridgeBridge() {
             {pantries.length === 0 ? (
               <div className="py-16 text-center">
                 {locating || loading ? (
-                  <p className="animate-pulse" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>finding pantries near you...</p>
+                  <p className="animate-pulse" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Finding pantries near you...</p>
                 ) : locationDenied ? (
                   <div>
-                    <p className="mb-4 text-sm" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>location access denied. enter your location:</p>
+                    <p className="mb-4 text-sm" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Location access denied. Enter your location:</p>
                     <input
                       autoFocus
                       className="w-full px-4 py-2.5 rounded-full border-2 text-sm focus:outline-none mb-3"
@@ -496,11 +500,11 @@ export function FridgeBridge() {
                       onKeyDown={(e) => e.key === "Enter" && findPantries()}
                     />
                     <button onClick={() => findPantries()} disabled={!location.trim()} className="w-full py-2.5 rounded-full border-2 text-sm font-medium transition-colors disabled:opacity-50" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
-                      find pantries
+                      Find pantries
                     </button>
                   </div>
                 ) : null}
-                <button onClick={() => setStep(1)} className="mt-6 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← back</button>
+                <button onClick={() => setStep(1)} className="mt-6 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← Back</button>
               </div>
             ) : (
               <>
@@ -508,7 +512,7 @@ export function FridgeBridge() {
                   <PantryMap pantries={pantries} userCoords={userCoords} />
                 </div>
 
-                <div className="text-xl mb-4" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>call nearby pantries</div>
+                <div className="text-xl mb-4" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Call nearby pantries</div>
 
                 {pantries.map((p, i) => (
                   <div
@@ -532,9 +536,9 @@ export function FridgeBridge() {
                 {error && <div className="mb-3 p-3 rounded-2xl text-sm" style={{ color: "#c0392b", fontFamily: "var(--font-libertinus)", backgroundColor: "rgba(255,100,100,0.15)" }}>{error}</div>}
 
                 <button onClick={callPantries} disabled={selectedPantries.size === 0 || loading} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-1 transition-all disabled:opacity-40" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
-                  {loading ? "deploying agents..." : `call ${selectedPantries.size} pantries`}
+                  {loading ? "Deploying agents..." : `Call ${selectedPantries.size} pantries`}
                 </button>
-                <button onClick={() => { setPantries([]); setStep(1); }} className="w-full mt-2 py-2 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← back</button>
+                <button onClick={() => { setPantries([]); setStep(1); }} className="w-full mt-2 py-2 text-sm hover:opacity-70 transition-opacity" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>← Back</button>
               </>
             )}
           </div>
@@ -551,7 +555,7 @@ export function FridgeBridge() {
           <div className="relative z-10 max-w-2xl mx-auto px-6 py-8">
             <div className="flex items-center gap-2 mb-1">
               <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <div className="text-xl" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>calling pantries...</div>
+              <div className="text-xl" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Calling pantries...</div>
             </div>
             <p className="text-sm mb-6" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>AI agents are calling simultaneously. Watch results come in live.</p>
 
@@ -561,10 +565,10 @@ export function FridgeBridge() {
                   <div className="flex items-center justify-between mb-1">
                     <div className="text-sm font-medium" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{status.pantry || key}</div>
                     <span className="text-xs ml-2 flex-shrink-0" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
-                      {status.status === "ringing" ? "📞 ringing" :
-                       status.status === "connected" || status.status === "listening" ? "🗣 on call" :
-                       status.type === "call_complete" ? "✅ done" :
-                       status.type === "call_error" ? "❌ failed" : status.status}
+                      {status.status === "ringing" ? "📞 Ringing" :
+                       status.status === "connected" || status.status === "listening" ? "🗣 On call" :
+                       status.type === "call_complete" ? "✅ Done" :
+                       status.type === "call_error" ? "❌ Failed" : status.status}
                     </span>
                   </div>
                   {status.message && <div className="text-xs italic mb-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{status.message}</div>}
@@ -582,7 +586,7 @@ export function FridgeBridge() {
 
             {allCallsDone && (
               <button onClick={getOptimalPlan} disabled={loading} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-2 transition-all disabled:opacity-40" style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}>
-                {loading ? "optimizing..." : "get my plan →"}
+                {loading ? "Optimizing..." : "Get my plan →"}
               </button>
             )}
           </div>
@@ -597,7 +601,7 @@ export function FridgeBridge() {
           <img src="/flower1.png" alt="" className="fixed bottom-0 right-0 w-72 h-auto pointer-events-none select-none z-0" style={{ transform: "rotate(-5deg) translate(20%, 15%)" }} />
 
           <div className="relative z-10 max-w-2xl mx-auto px-6 py-8">
-            <div className="text-xl mb-5" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>your plan</div>
+            <div className="text-xl mb-5" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Your plan</div>
 
             {plan.plan?.map((stop, i) => (
               <div key={i} className="flex items-start gap-3 px-5 py-3 mb-3 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.6)" }}>
@@ -605,14 +609,14 @@ export function FridgeBridge() {
                 <div>
                   <div className="text-sm font-medium mb-0.5" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>{stop.pantry_name}</div>
                   <div className="text-xs" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{stop.address}</div>
-                  <div className="text-xs mt-1" style={{ color: "#3a7d44", fontFamily: "var(--font-libertinus)" }}>pick up: {stop.items_to_get?.join(", ")}</div>
+                  <div className="text-xs mt-1" style={{ color: "#3a7d44", fontFamily: "var(--font-libertinus)" }}>Pick up: {stop.items_to_get?.join(", ")}</div>
                 </div>
               </div>
             ))}
 
             {plan.still_missing?.length > 0 && (
               <div className="px-5 py-3 mb-3 rounded-2xl border-2" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,200,100,0.3)" }}>
-                <div className="text-sm font-medium mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>still missing</div>
+                <div className="text-sm font-medium mb-1" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>Still missing</div>
                 <div className="text-sm" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{plan.still_missing.join(", ")}</div>
               </div>
             )}
@@ -626,7 +630,7 @@ export function FridgeBridge() {
             {error && <div className="mb-3 p-3 rounded-2xl text-sm" style={{ color: "#c0392b", fontFamily: "var(--font-libertinus)", backgroundColor: "rgba(255,100,100,0.15)" }}>{error}</div>}
 
             <button onClick={resetAll} className="w-full py-2.5 rounded-full border-2 text-sm font-medium mt-2 transition-all hover:opacity-70" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>
-              start over
+              Start over
             </button>
           </div>
         </div>
@@ -635,85 +639,80 @@ export function FridgeBridge() {
       {/* ─── Recipe Detail Modal ─── */}
       {viewingMealIdx !== null && (
         <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={closeRecipeDetail}>
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
           <div
-            className="relative w-full max-w-lg bg-white rounded-t-3xl max-h-[85vh] overflow-y-auto shadow-2xl animate-fade-up"
+            className="relative w-full max-w-2xl max-h-[88vh] overflow-y-auto shadow-2xl animate-fade-up rounded-t-3xl border-t-2 border-x-2"
+            style={{ backgroundColor: "#FCEEAD", borderColor: "#2d1f0e" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drag handle */}
             <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 rounded-full bg-neutral-200" />
+              <div className="w-10 h-1 rounded-full" style={{ backgroundColor: "#2d1f0e44" }} />
             </div>
 
-            <div className="px-5 pb-8 pt-3">
+            <div className="px-6 pb-10 pt-3">
               {/* Header */}
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1 pr-3">
-                  <h3 className="text-xl font-bold text-neutral-900">{meals[viewingMealIdx]?.name}</h3>
-                  <p className="text-sm text-neutral-500 mt-1">{meals[viewingMealIdx]?.description}</p>
-                  <div className="flex gap-3 mt-2 text-xs text-neutral-400">
+                  <h3 className="text-xl" style={{ color: "#2d1f0e", fontFamily: "var(--font-krona)", letterSpacing: "-0.03em" }}>{meals[viewingMealIdx]?.name}</h3>
+                  <p className="text-sm mt-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>{meals[viewingMealIdx]?.description}</p>
+                  <div className="flex gap-3 mt-2 text-xs" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>
                     <span>⏱ {meals[viewingMealIdx]?.time_minutes} min</span>
-                    <span>📊 {meals[viewingMealIdx]?.difficulty}</span>
-                    {recipeDetail?.servings && <span>🍽 {recipeDetail.servings}</span>}
+                    <span>· {meals[viewingMealIdx]?.difficulty}</span>
+                    {recipeDetail?.servings && <span>· {recipeDetail.servings}</span>}
                   </div>
                 </div>
-                <button onClick={closeRecipeDetail} className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 text-lg font-light flex-shrink-0">
+                <button onClick={closeRecipeDetail} className="w-8 h-8 flex items-center justify-center rounded-full border-2 text-lg flex-shrink-0 hover:opacity-70 transition-opacity" style={{ borderColor: "#2d1f0e", color: "#2d1f0e" }}>
                   ×
                 </button>
               </div>
 
               {/* Ingredients */}
-              <div className="flex gap-3 mb-5">
-                <div className="flex-1 p-3 bg-green-50 rounded-xl">
-                  <div className="text-xs uppercase tracking-wider text-green-600 font-medium mb-2">✓ You have</div>
-                  {meals[viewingMealIdx]?.have?.map((item, j) => (
-                    <div key={j} className="text-sm text-green-700">{item}</div>
-                  ))}
-                </div>
-                {meals[viewingMealIdx]?.missing?.length > 0 && (
-                  <div className="flex-1 p-3 bg-red-50 rounded-xl">
-                    <div className="text-xs uppercase tracking-wider text-red-400 font-medium mb-2">✗ Missing</div>
-                    {meals[viewingMealIdx]?.missing?.map((item, j) => (
-                      <div key={j} className="text-sm text-red-500">{item}</div>
-                    ))}
-                  </div>
-                )}
+              <div className="flex gap-2 mb-5 flex-wrap">
+                {meals[viewingMealIdx]?.have?.map((item, j) => (
+                  <span key={j} className="px-3 py-1 rounded-full border-2 text-xs" style={{ borderColor: "#2d1f0e", color: "#3a7d44", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>✓ {item}</span>
+                ))}
+                {meals[viewingMealIdx]?.missing?.map((item, j) => (
+                  <span key={j} className="px-3 py-1 rounded-full border-2 text-xs" style={{ borderColor: "#2d1f0e", color: "#c0392b", fontFamily: "var(--font-krona)", backgroundColor: "rgba(255,255,255,0.45)" }}>✗ {item}</span>
+                ))}
               </div>
 
               {/* Steps */}
               <div className="mb-4">
-                <div className="text-sm font-bold text-neutral-900 mb-3">Step-by-step instructions</div>
+                <div className="text-sm mb-3" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Step-by-step instructions</div>
+
                 {loadingRecipe ? (
                   <div className="flex flex-col gap-2">
                     {[1, 2, 3, 4].map((n) => (
-                      <div key={n} className="h-10 bg-neutral-100 rounded-xl animate-pulse" />
+                      <div key={n} className="h-10 rounded-2xl animate-pulse" style={{ backgroundColor: "rgba(45,31,14,0.1)" }} />
                     ))}
                   </div>
                 ) : recipeDetail?.steps?.map((step, j) => (
                   <div key={j} className="flex gap-3 mb-3">
-                    <span className="w-6 h-6 rounded-full bg-green-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="w-6 h-6 rounded-full border-2 text-xs font-medium flex items-center justify-center flex-shrink-0 mt-0.5" style={{ borderColor: "#2d1f0e", color: "#2d1f0e", fontFamily: "var(--font-krona)" }}>
                       {j + 1}
                     </span>
-                    <p className="text-sm text-neutral-700 leading-relaxed">{step.replace(/^Step\s*\d+[:.]\s*/i, "")}</p>
+                    <p className="text-sm leading-relaxed" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>{step.replace(/^Step\s*\d+[:.]\s*/i, "")}</p>
                   </div>
                 ))}
               </div>
 
               {/* Tips */}
               {recipeDetail?.tips && recipeDetail.tips.length > 0 && (
-                <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl mb-5">
-                  <div className="text-xs uppercase tracking-wider text-amber-600 font-medium mb-2">💡 Tips</div>
+                <div className="px-4 py-3 rounded-2xl border-2 mb-5" style={{ borderColor: "#2d1f0e", backgroundColor: "rgba(255,255,255,0.45)" }}>
+                  <div className="text-xs mb-2" style={{ color: "#2d1f0e", fontFamily: "var(--font-libertinus)" }}>Tips</div>
                   {recipeDetail.tips.map((tip, j) => (
-                    <div key={j} className="text-sm text-amber-700 mb-1">• {tip}</div>
+                    <div key={j} className="text-sm mb-1" style={{ color: "#2d1f0e99", fontFamily: "var(--font-libertinus)" }}>• {tip}</div>
                   ))}
                 </div>
               )}
 
               <button
                 onClick={() => { setSelectedMeal(viewingMealIdx); closeRecipeDetail(); }}
-                className="w-full py-4 rounded-2xl bg-green-600 text-white font-bold hover:bg-green-700 transition-colors"
+                className="w-full py-2.5 rounded-full border-2 text-sm font-medium transition-all hover:opacity-80"
+                style={{ borderColor: "#2d1f0e", color: "#FCEEAD", fontFamily: "var(--font-krona)", backgroundColor: "#2d1f0e" }}
               >
-                {selectedMeal === viewingMealIdx ? "✓ This meal is selected" : "Cook this meal"}
+                {selectedMeal === viewingMealIdx ? "✓ Meal selected" : "Find pantries for this meal →"}
               </button>
             </div>
           </div>

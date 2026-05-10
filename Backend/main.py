@@ -226,22 +226,89 @@ Include lat/lng coordinates for mapping."""}],
 
 
     # ✅ Add this — prepend your demo pantry
-    demo_pantry = {
-        "name": "HackDavis Food Pantry - Demo",
+    demo_pantry_1 = {
+        "name": "1. HackDavis Food Pantry, Demo 1",
         "address": "UC Davis, Davis, CA 95616",
-        "phone": "+17078632820",  # your number
+        "phone": "+17078632820",  # phone 1
         "hours": "Open Now",
         "notes": "Demo pantry for HackDavis 2026",
         "lat": 38.5382,
         "lng": -121.7617
     }
-    data["pantries"] = [demo_pantry] + data.get("pantries", [])
-
+    demo_pantry_2 = {
+        "name": "2. HackDavis Food Pantry, Demo 2",
+        "address": "UC Davis, Davis, CA 95616",
+        "phone": "+14088079857",  # phone 2 number here
+        "hours": "Open Now",
+        "notes": "Demo pantry for HackDavis 2026",
+        "lat": 38.5382,
+        "lng": -121.7618
+    }
+    data["pantries"] = [demo_pantry_1, demo_pantry_2] + data.get("pantries", [])
 
     if session_id in sessions:
         sessions[session_id]["pantries"] = data.get("pantries", [])
     return data
 
+
+async def poll_conversation(call_id: str, conversation_id: str, session_id: str, pantry_name: str):
+    seen_lines = 0
+    for _ in range(150):  # poll for up to 5 minutes
+        await asyncio.sleep(2)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                res = await client.get(
+                    f"https://api.elevenlabs.io/v1/convai/conversations/{conversation_id}",
+                    headers={"xi-api-key": ELEVENLABS_API_KEY}
+                )
+                data = res.json()
+                transcript = data.get("transcript", [])
+                # Push full transcript so far as one message
+                if transcript:
+                    full_so_far = "\n".join([
+                        f"{'Agent' if line['role'] == 'agent' else 'Pantry'}: {line['message']}"
+                        for line in transcript
+                    ])
+                    await notify_ws(session_id, {
+                        "type": "call_update",
+                        "call_id": call_id,
+                        "pantry": pantry_name,
+                        "status": "connected",
+                        "message": full_so_far
+                    })
+
+                # Check if done
+                if data.get("status") == "done":
+                    # Build full transcript text
+                    full_transcript = "\n".join([
+                        f"{'Agent' if t['role'] == 'agent' else 'Pantry'}: {t['message']}"
+                        for t in transcript
+                    ])
+                    # Ask Groq to extract available/unavailable items
+                    state = call_states.get(call_id, {})
+                    missing = state.get("missing_ingredients", [])
+                    try:
+                        analysis = await call_claude(
+                            [{"role": "user", "content": f"""Based on this phone call transcript between an AI agent and a food pantry, determine which ingredients the pantry has available.
+                                Ingredients we were looking for: {json.dumps(missing)}
+                                Transcript:{full_transcript}
+                                Return ONLY JSON: {{"available": [...], "unavailable": [...], "substitutions": {{}}}}"""}],
+                                system="Extract food availability from call transcript. Return only JSON."
+                        )
+                        results = parse_json(analysis)
+                    except Exception as e:
+                        print(f"Analysis error: {e}", flush=True)
+                        results = {"available": [], "unavailable": missing, "substitutions": {}}
+
+                    await notify_ws(session_id, {
+                        "type": "call_complete",
+                        "call_id": call_id,
+                        "pantry": pantry_name,
+                        "results": results
+                    })
+                    break
+        except Exception as e:
+            print(f"Poll error: {e}", flush=True)
 
 @app.post("/api/call-pantries")
 async def call_pantries(request: Request):
@@ -258,30 +325,28 @@ async def call_pantries(request: Request):
     call_ids = []
 
     for pantry in pantries:
-        phone = pantry.get("phone", "")
-        if not phone:
-            continue
-        call_id = uuid.uuid4().hex
-        call_states[call_id] = {
-            "session_id": session_id, "pantry": pantry, "missing_ingredients": missing_ingredients,
-            "selected_meal": selected_meal, "conversation": [], "results": {}, "status": "initiating",
-        }
-        try:
-            call = twilio_client.calls.create(
-                to=phone, from_=TWILIO_PHONE_NUMBER,
-                url=f"{BASE_URL}/api/twilio/voice/{call_id}",
-                status_callback=f"{BASE_URL}/api/twilio/status/{call_id}",
-                status_callback_event=["completed"], timeout=30,
-            )
-            call_states[call_id]["twilio_sid"] = call.sid
-            call_states[call_id]["status"] = "ringing"
-            call_ids.append(call_id)
-            await notify_ws(session_id, {"type": "call_started", "call_id": call_id, "pantry": pantry["name"], "status": "ringing"})
-        except Exception as e:
-            call_states[call_id]["status"] = "failed"
-            await notify_ws(session_id, {"type": "call_error", "call_id": call_id, "pantry": pantry["name"], "error": str(e)})
-
-    return {"call_ids": call_ids}
+            phone = pantry.get("phone", "")
+            if not phone:
+                continue
+            call_id = uuid.uuid4().hex
+            call_states[call_id] = {
+                "session_id": session_id, "pantry": pantry, "missing_ingredients": missing_ingredients,
+                "selected_meal": selected_meal, "conversation": [], "results": {}, "status": "initiating",
+            }
+            try:
+                call = twilio_client.calls.create(
+                    to=phone, from_=TWILIO_PHONE_NUMBER,
+                    url=f"{BASE_URL}/api/twilio/voice/{call_id}",
+                    status_callback=f"{BASE_URL}/api/twilio/status/{call_id}",
+                    status_callback_event=["completed"], timeout=30,
+                )
+                call_states[call_id]["twilio_sid"] = call.sid
+                call_states[call_id]["status"] = "ringing"
+                call_ids.append(call_id)
+                await notify_ws(session_id, {"type": "call_started", "call_id": call_id, "pantry": pantry["name"], "status": "ringing"})
+            except Exception as e:
+                call_states[call_id]["status"] = "failed"
+                await notify_ws(session_id, {"type": "call_error", "call_id": call_id, "pantry": pantry["name"], "error": str(e)})
 
 
 @app.api_route("/api/twilio/voice/{call_id}", methods=["GET", "POST"])
@@ -302,7 +367,7 @@ async def twilio_voice_webhook(call_id: str):
     state["status"] = "in_progress"
     await notify_ws(state["session_id"], {"type": "call_update", "call_id": call_id, "pantry": state["pantry"]["name"], "status": "connected", "message": "Agent speaking with pantry..."})
 
-    if True:
+    if False:
         resp = VoiceResponse()
         # default twilio voice (DONT USE, too ROBOTIC)
         gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
@@ -311,25 +376,25 @@ async def twilio_voice_webhook(call_id: str):
         resp.say("I didn't catch that. Thank you, goodbye.")
         resp.hangup()
 #   
-    # print(">>> twilio_voice_webhook reached response building", flush=True)
-    # print(f">>> ELEVENLABS_API_KEY set: {bool(ELEVENLABS_API_KEY)}", flush=True)
-    # resp = VoiceResponse()
-    # gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
-    # try:
-    #     if ELEVENLABS_API_KEY:
-    #         gather.say(greeting, voice="Polly.Joanna-Neural")
+    print(">>> twilio_voice_webhook reached response building", flush=True)
+    print(f">>> ELEVENLABS_API_KEY set: {bool(ELEVENLABS_API_KEY)}", flush=True)
+    resp = VoiceResponse()
+    gather = Gather(input="speech", action=f"{BASE_URL}/api/twilio/gather/{call_id}", timeout=10, speech_timeout="auto", language="en-US")
+    try:
+        if ELEVENLABS_API_KEY:
+            gather.say(greeting, voice="Polly.Joanna-Neural")
 
-    #     else:
-    #         print(">>> using Polly fallback", flush=True)
-    #         gather.say(greeting, voice="Polly.Joanna-Neural")
-    # except Exception as e:
-    #     print(f">>> ELEVENLABS ERROR: {e}", flush=True)
-    #     gather.say(greeting, voice="Polly.Joanna-Neural")
-    # resp.append(gather)
-    # print(f">>> XML being returned: {str(resp)}", flush=True)
-    # resp.say("I didn't catch that. Thank you, goodbye.")
-    # resp.hangup()
-
+        else:
+            print(">>> using Polly fallback", flush=True)
+            gather.say(greeting, voice="Polly.Joanna-Neural")
+    except Exception as e:
+        print(f">>> ELEVENLABS ERROR: {e}", flush=True)
+        gather.say(greeting, voice="Polly.Joanna-Neural")
+    resp.append(gather)
+    print(f">>> XML being returned: {str(resp)}", flush=True)
+    resp.say("I didn't catch that. Thank you, goodbye.")
+    resp.hangup()
+    
     return HTMLResponse(str(resp), media_type="application/xml")
 
 

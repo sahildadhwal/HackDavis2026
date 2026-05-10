@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import httpx
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -28,8 +29,17 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse, Gather
+from services.mongo import connect, disconnect, find_pantries_near, log_call, get_recent_notes
+from services.backboard import remember_event, get_user_memory
 
 load_dotenv()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    await connect()
+    yield
+    await disconnect()
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -38,7 +48,7 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
 GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID", "")
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
@@ -51,7 +61,7 @@ ws_connections: dict = {}
 call_states: dict = {}
 
 # ─── App ──────────────────────────────────────────────────────────────────────
-app = FastAPI(title="PantryPal API")
+app = FastAPI(title="PantryPal API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:3001", "*"],
@@ -65,47 +75,51 @@ app.mount("/audio", StaticFiles(directory="audio"), name="audio")
 async def call_claude(messages: list, system: str = "", max_tokens: int = 1024) -> str:
     async with httpx.AsyncClient(timeout=60) as client:
         body = {
-            "model": "llama-3.3-70b-versatile",
+            "model": "claude-haiku-4-5-20251001",
             "max_tokens": max_tokens,
             "messages": messages,
         }
         if system:
-            body["messages"] = [{"role": "system", "content": system}] + messages
+            body["system"] = system
         resp = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
+            "https://api.anthropic.com/v1/messages",
             headers={
-                "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
-                "Content-Type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
             },
             json=body,
         )
         data = resp.json()
-        print("GROQ RESPONSE:", data, flush=True)
-        # return data["content"][0]["text"]
-        return data["choices"][0]["message"]["content"]
+        print("ANTHROPIC RESPONSE:", data, flush=True)
+        if "error" in data:
+            raise RuntimeError(f"Anthropic API error: {data['error'].get('message', data['error'])}")
+        return data["content"][0]["text"]
 
 
 async def call_claude_vision(image_b64: str, media_type: str, prompt: str) -> str:
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
+            "https://api.anthropic.com/v1/messages",
             headers={
-                "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
-                "Content-Type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
             },
             json={
-                "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-                
+                "model": "claude-haiku-4-5-20251001",
                 "max_tokens": 1024,
                 "messages": [{"role": "user", "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}},
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
                     {"type": "text", "text": prompt},
                 ]}],
             },
         )
         data = resp.json()
-        print("GROQ RESPONSE:", data, flush=True)
-        return data["choices"][0]["message"]["content"] 
+        print("ANTHROPIC RESPONSE:", data, flush=True)
+        if "error" in data:
+            raise RuntimeError(f"Anthropic API error: {data['error'].get('message', data['error'])}")
+        return data["content"][0]["text"]
 
     
 async def generate_speech(text: str) -> str:
@@ -182,9 +196,16 @@ async def suggest_meals(request: Request):
     session_id = body.get("session_id", "")
     ingredients = body.get("ingredients", [])
     specific_request = body.get("specific_request", "")
+    user_id = body.get("user_id", "")
 
     if session_id in sessions:
         sessions[session_id]["ingredients"] = ingredients
+
+    # Pull Backboard memory and inject into system prompt
+    user_memories = await get_user_memory(user_id) if user_id else []
+    memory_block = ""
+    if user_memories:
+        memory_block = "\n\nUser preferences from past sessions:\n" + "\n".join(f"- {m}" for m in user_memories)
 
     extra = f"\n\nThe user specifically wants: {specific_request}. Prioritize this." if specific_request else ""
 
@@ -192,7 +213,7 @@ async def suggest_meals(request: Request):
         [{"role": "user", "content": f"""Given these ingredients: {json.dumps(ingredients)}{extra}
 Suggest 3-5 meals. For each, list what they have and what's missing.
 Return ONLY JSON: {{"meals": [{{"name": "...", "description": "...", "have": [...], "missing": [...], "difficulty": "easy|medium|hard", "time_minutes": 30}}]}}"""}],
-        system="Helpful cooking assistant for budget-friendly meals. Return only JSON."
+        system=f"Helpful cooking assistant for budget-friendly meals. Return only JSON.{memory_block}"
     )
 
     try:
@@ -202,6 +223,8 @@ Return ONLY JSON: {{"meals": [{{"name": "...", "description": "...", "have": [..
 
     if session_id in sessions:
         sessions[session_id]["meals"] = data.get("meals", [])
+
+    data["personalized"] = len(user_memories) > 0
     return data
 
 
@@ -211,44 +234,27 @@ async def find_pantries(request: Request):
     location = body.get("location", "")
     session_id = body.get("session_id", "")
 
-    result = await call_claude(
-        [{"role": "user", "content": f"""Find real food pantries, food banks near {location}. Need 3-5 with phone numbers.
-Return ONLY JSON: {{"pantries": [{{"name": "...", "address": "...", "phone": "+1XXXXXXXXXX", "hours": "...", "notes": "...", "lat": 0.0, "lng": 0.0}}]}}
-Include lat/lng coordinates for mapping."""}],
-        system="Social services assistant. Find real food resources. Return only JSON.",
-        max_tokens=2048,
-    )
+    # Parse lat/lng from location string (set by geolocation) or fall back to Davis coords
+    lat, lng = 38.5449, -121.7405
+    if "," in location:
+        parts = location.split(",")
+        try:
+            lat, lng = float(parts[0].strip()), float(parts[1].strip())
+        except ValueError:
+            pass
 
-    try:
-        data = parse_json(result)
-    except:
-        data = {"pantries": []}
+    pantries = await find_pantries_near(lat, lng)
 
-
-    # ✅ Add this — prepend your demo pantry
-    demo_pantry_1 = {
-        "name": "1. HackDavis Food Pantry, Demo 1",
-        "address": "UC Davis, Davis, CA 95616",
-        "phone": "+17078632820",  # phone 1
-        "hours": "Open Now",
-        "notes": "Demo pantry for HackDavis 2026",
-        "lat": 38.5382,
-        "lng": -121.7617
-    }
-    demo_pantry_2 = {
-        "name": "2. HackDavis Food Pantry, Demo 2",
-        "address": "UC Davis, Davis, CA 95616",
-        "phone": "+14088079857",  # phone 2 number here
-        "hours": "Open Now",
-        "notes": "Demo pantry for HackDavis 2026",
-        "lat": 38.5382,
-        "lng": -121.7618
-    }
-    data["pantries"] = [demo_pantry_1, demo_pantry_2] + data.get("pantries", [])
+    # Attach recent call history notes
+    names = [p["name"] for p in pantries]
+    notes = await get_recent_notes(names)
+    for p in pantries:
+        if p["name"] in notes:
+            p["recent_note"] = notes[p["name"]]
 
     if session_id in sessions:
-        sessions[session_id]["pantries"] = data.get("pantries", [])
-    return data
+        sessions[session_id]["pantries"] = pantries
+    return {"pantries": pantries}
 
 
 async def poll_conversation(call_id: str, conversation_id: str, session_id: str, pantry_name: str):
@@ -484,7 +490,9 @@ async def twilio_status_callback(call_id: str, request: Request):
             if twilio_status in ["busy", "no-answer", "canceled"]:
                 await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": {"available": [], "unavailable": [], "rejected": True}})
             elif twilio_status in ["completed", "failed"]:
-                await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": state.get("results", {})}) 
+                results = state.get("results", {})
+                await notify_ws(state["session_id"], {"type": "call_complete", "call_id": call_id, "pantry": state["pantry"]["name"], "results": results})
+                await log_call(state["pantry"]["name"], results.get("available", []), results.get("unavailable", [])) 
 
     return HTMLResponse("OK")
 
@@ -528,7 +536,7 @@ async def demo_call_pantries(request: Request):
         try:
             r = await call_claude([{"role": "user", "content": f"""Simulate food pantry "{pantry['name']}" inventory for: {json.dumps(missing)}
 Pantries typically have: canned goods, pasta, rice, beans, bread, PB, cereal, milk, eggs, some produce.
-Return ONLY JSON: {{"available": [...], "unavailable": [...], "substitutions": {{}}}}"""}], system="Simulate realistic pantry inventory. JSON only.")
+Return ONLY JSON where available and unavailable are arrays of plain strings (ingredient names only): {{"available": ["string", ...], "unavailable": ["string", ...], "substitutions": {{}}}}"""}], system="Simulate realistic pantry inventory. Return only JSON. Arrays must contain plain strings, not objects.")
             data = parse_json(r)
         except:
             import random
@@ -537,10 +545,29 @@ Return ONLY JSON: {{"available": [...], "unavailable": [...], "substitutions": {
 
         await asyncio.sleep(3)
         await notify_ws(session_id, {"type": "call_complete", "call_id": cid, "pantry": pantry["name"], "results": data})
+        await log_call(pantry["name"], data.get("available", []), data.get("unavailable", []))
         return {"pantry": pantry["name"], "results": data}
 
     results = await asyncio.gather(*[simulate(p, i*1.5) for i, p in enumerate(pantries)])
     return {"results": results}
+
+
+# ─── Backboard memory ────────────────────────────────────────────────────────
+
+@app.post("/api/remember")
+async def remember(request: Request):
+    body = await request.json()
+    user_id = body.get("user_id", "")
+    event = body.get("event", "")
+    if user_id and event:
+        asyncio.create_task(remember_event(user_id, event))
+    return {"ok": True}
+
+
+@app.get("/api/memory/{user_id}")
+async def memory(user_id: str):
+    items = await get_user_memory(user_id)
+    return {"memories": items}
 
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────

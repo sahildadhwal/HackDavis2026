@@ -18,6 +18,8 @@ import uuid
 import asyncio
 import base64
 import time
+import re
+import math
 from pathlib import Path
 
 import httpx
@@ -28,11 +30,15 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse, Gather
+from google import genai
+from google.genai import types
+
 
 load_dotenv()
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+GOOGLE_GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
@@ -41,6 +47,11 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID", "")
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
+GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", GEMINI_TEXT_MODEL)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_TEXT_MODEL = os.getenv("GROQ_TEXT_MODEL", "llama-3.3-70b-versatile")
+GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 AUDIO_DIR = Path("audio")
 AUDIO_DIR.mkdir(exist_ok=True)
@@ -62,50 +73,137 @@ app.mount("/audio", StaticFiles(directory="audio"), name="audio")
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-async def call_claude(messages: list, system: str = "", max_tokens: int = 1024) -> str:
-    async with httpx.AsyncClient(timeout=60) as client:
-        body = {
-            "model": "llama-3.3-70b-versatile",
-            "max_tokens": max_tokens,
-            "messages": messages,
-        }
-        if system:
-            body["messages"] = [{"role": "system", "content": system}] + messages
+async def call_groq(
+    messages: list,
+    system: str = "",
+    max_tokens: int = 1024,
+    json_mode: bool = False,
+) -> str:
+    if not GROQ_API_KEY:
+        raise RuntimeError("Groq API key not configured")
+    groq_messages = []
+    if system:
+        groq_messages.append({"role": "system", "content": system})
+    for msg in messages:
+        groq_messages.append({"role": msg["role"], "content": msg["content"]})
+    payload: dict = {"model": GROQ_TEXT_MODEL, "messages": groq_messages, "max_tokens": max_tokens}
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=body,
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json=payload,
         )
-        data = resp.json()
-        print("GROQ RESPONSE:", data, flush=True)
-        # return data["content"][0]["text"]
-        return data["choices"][0]["message"]["content"]
+        resp.raise_for_status()
+    text = resp.json()["choices"][0]["message"]["content"]
+    print("GROQ RESPONSE:", text, flush=True)
+    return text
+
+
+async def call_groq_vision(image_b64: str, media_type: str, prompt: str) -> str:
+    if not GROQ_API_KEY:
+        raise RuntimeError("Groq API key not configured")
+    payload = {
+        "model": GROQ_VISION_MODEL,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}},
+            {"type": "text", "text": prompt},
+        ]}],
+        "max_tokens": 1024,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json=payload,
+        )
+        resp.raise_for_status()
+    text = resp.json()["choices"][0]["message"]["content"]
+    print("GROQ VISION RESPONSE:", text, flush=True)
+    return text
+
+
+async def call_claude(
+    messages: list,
+    system: str = "",
+    max_tokens: int = 1024,
+    json_mode: bool = False,
+    response_schema: dict | None = None,
+    use_google_search: bool = False,
+) -> str:
+    try:
+        client = genai.Client(api_key=GOOGLE_GEMINI_API_KEY)
+        contents = [
+            types.Content(
+                role="user" if msg["role"] == "user" else "model",
+                parts=[types.Part(text=msg["content"])]
+            )
+            for msg in messages
+        ]
+        config = types.GenerateContentConfig(
+            system_instruction=system or None,
+            max_output_tokens=max_tokens,
+            response_mime_type="application/json" if json_mode and not use_google_search else None,
+            response_schema=response_schema if not use_google_search else None,
+            tools=[types.Tool(google_search=types.GoogleSearch())] if use_google_search else None,
+        )
+        response = await client.aio.models.generate_content(
+            model=GEMINI_TEXT_MODEL,
+            contents=contents,
+            config=config,
+        )
+        parsed = getattr(response, "parsed", None)
+        if json_mode and parsed is not None:
+            try:
+                if hasattr(parsed, "model_dump"):
+                    return json.dumps(parsed.model_dump())
+                return json.dumps(parsed)
+            except TypeError:
+                pass
+        print("GEMINI RESPONSE:", response.text, flush=True)
+        return response.text
+    except Exception as gemini_err:
+        print(f"Gemini failed ({type(gemini_err).__name__}: {gemini_err}), falling back to Groq", flush=True)
+        try:
+            # use_google_search calls always ask for JSON but set json_mode=False for Gemini;
+            # Groq needs json_mode=True explicitly or it returns conversational text around the JSON
+            groq_json_mode = json_mode or use_google_search
+            return await call_groq(messages, system, max_tokens, groq_json_mode)
+        except Exception as groq_err:
+            print(f"Groq fallback also failed ({type(groq_err).__name__}: {groq_err})", flush=True)
+            raise gemini_err
 
 
 async def call_claude_vision(image_b64: str, media_type: str, prompt: str) -> str:
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-                
-                "max_tokens": 1024,
-                "messages": [{"role": "user", "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_b64}"}},
-                    {"type": "text", "text": prompt},
-                ]}],
-            },
+    print(f"DEBUG: GOOGLE_GEMINI_API_KEY set={bool(GOOGLE_GEMINI_API_KEY)}", flush=True)
+    try:
+        client = genai.Client(api_key=GOOGLE_GEMINI_API_KEY)
+        image_bytes = base64.b64decode(image_b64)
+        response = await client.aio.models.generate_content(
+            model=GEMINI_VISION_MODEL,
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_bytes(data=image_bytes, mime_type=media_type),
+                        types.Part(text=prompt),
+                    ],
+                )
+            ],
         )
-        data = resp.json()
-        print("GROQ RESPONSE:", data, flush=True)
-        return data["choices"][0]["message"]["content"] 
+        print("GEMINI RESPONSE:", response.text, flush=True)
+        return response.text
+    except Exception as gemini_err:
+        import traceback as tb
+        print(f"GEMINI ERROR type={type(gemini_err).__name__} msg={gemini_err}", flush=True)
+        print(tb.format_exc(), flush=True)
+        print("Falling back to Groq vision", flush=True)
+        try:
+            return await call_groq_vision(image_b64, media_type, prompt)
+        except Exception as groq_err:
+            print(f"Groq vision fallback also failed ({type(groq_err).__name__}: {groq_err})", flush=True)
+            raise gemini_err
 
     
 async def generate_speech(text: str) -> str:
@@ -143,11 +241,453 @@ async def update_google_sheet(row_data: list):
         print(f"Google Sheets error: {e}")
 
 
-def parse_json(text: str):
-    return json.loads(text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
+def escape_control_chars_in_json_strings(text: str) -> str:
+    out = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if escaped:
+            out.append(char)
+            escaped = False
+            continue
+        if char == "\\" and in_string:
+            out.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            out.append(char)
+            continue
+        if in_string and char == "\n":
+            out.append("\\n")
+            continue
+        if in_string and char == "\r":
+            out.append("\\r")
+            continue
+        if in_string and char == "\t":
+            out.append("\\t")
+            continue
+        out.append(char)
+    return "".join(out)
+
+
+def parse_json(text):
+    if isinstance(text, (dict, list)):
+        return text
+    cleaned = str(text).strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start_candidates = [i for i in (cleaned.find("{"), cleaned.find("[")) if i != -1]
+        if start_candidates:
+            start = min(start_candidates)
+            end = max(cleaned.rfind("}"), cleaned.rfind("]"))
+            if end > start:
+                cleaned = cleaned[start:end + 1]
+        return json.loads(escape_control_chars_in_json_strings(cleaned))
+
+
+MEALS_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["meals"],
+    "properties": {
+        "meals": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "required": ["name", "description", "have", "missing", "difficulty", "time_minutes"],
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "description": {"type": "STRING"},
+                    "have": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "missing": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "difficulty": {"type": "STRING", "enum": ["easy", "medium", "hard"]},
+                    "time_minutes": {"type": "INTEGER"},
+                },
+            },
+        },
+    },
+}
+
+PANTRIES_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["pantries"],
+    "properties": {
+        "pantries": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "required": ["name", "address", "phone", "hours", "notes", "lat", "lng"],
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "address": {"type": "STRING"},
+                    "phone": {"type": "STRING"},
+                    "hours": {"type": "STRING"},
+                    "notes": {"type": "STRING"},
+                    "lat": {"type": "NUMBER"},
+                    "lng": {"type": "NUMBER"},
+                },
+            },
+        },
+    },
+}
+
+RECIPE_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["steps", "tips", "servings"],
+    "properties": {
+        "steps": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "required": ["action"],
+                "properties": {
+                    "action": {"type": "STRING"},
+                    "heat": {"type": "STRING"},
+                    "time": {"type": "STRING"},
+                    "cue": {"type": "STRING"},
+                    "stir": {"type": "STRING"},
+                    "tips": {"type": "STRING"},
+                },
+            },
+        },
+        "tips": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "servings": {"type": "STRING"},
+    },
+}
+
+PLAN_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["plan", "still_missing", "recipe_modifications", "summary"],
+    "properties": {
+        "plan": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "required": ["pantry_name", "address", "items_to_get", "visit_order"],
+                "properties": {
+                    "pantry_name": {"type": "STRING"},
+                    "address": {"type": "STRING"},
+                    "items_to_get": {"type": "ARRAY", "items": {"type": "STRING"}},
+                    "visit_order": {"type": "INTEGER"},
+                },
+            },
+        },
+        "still_missing": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "recipe_modifications": {"type": "STRING"},
+        "summary": {"type": "STRING"},
+    },
+}
+
+
+def clean_string_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def normalize_meals(data: dict) -> dict:
+    meals = []
+    for meal in data.get("meals", []) if isinstance(data, dict) else []:
+        if not isinstance(meal, dict):
+            continue
+        try:
+            time_minutes = int(meal.get("time_minutes") or 30)
+        except (TypeError, ValueError):
+            time_minutes = 30
+        meals.append({
+            "name": str(meal.get("name", "Untitled meal")).strip() or "Untitled meal",
+            "description": str(meal.get("description", "")).strip(),
+            "have": clean_string_list(meal.get("have", [])),
+            "missing": clean_string_list(meal.get("missing", [])),
+            "difficulty": meal.get("difficulty") if meal.get("difficulty") in {"easy", "medium", "hard"} else "easy",
+            "time_minutes": time_minutes,
+        })
+    return {"meals": meals}
+
+
+def fallback_meals(ingredients: list, specific_request: str = "") -> dict:
+    available = clean_string_list(ingredients)
+    staples = {"salt", "pepper", "olive oil", "butter", "garlic", "onion", "rice", "pasta", "flour"}
+    visible = [item for item in available if item.lower() not in staples]
+    base_items = visible or available or ["pantry staples"]
+    focus = specific_request.strip()
+    meal_names = [
+        f"{base_items[0].title()} Skillet",
+        f"{base_items[min(1, len(base_items) - 1)].title()} Rice Bowl",
+        f"{base_items[min(2, len(base_items) - 1)].title()} Pasta",
+        f"{base_items[0].title()} Soup",
+        f"{base_items[min(1, len(base_items) - 1)].title()} Tacos",
+        f"{base_items[min(2, len(base_items) - 1)].title()} Frittata",
+    ]
+    if focus:
+        meal_names[0] = f"{focus.title()} with {base_items[0].title()}"
+    fallback = []
+    for idx, name in enumerate(meal_names):
+        have = available[:6]
+        missing_options = ["protein or beans", "fresh greens", "sauce or seasoning", "broth", "tortillas", "eggs"]
+        missing = [missing_options[idx]]
+        fallback.append({
+            "name": name,
+            "description": "Simple, flexible meal using what you already have.",
+            "have": have,
+            "missing": missing,
+            "difficulty": "easy",
+            "time_minutes": 25 + idx * 5,
+        })
+    return {"meals": fallback}
+
+
+def fallback_recipe_steps(meal_name: str, have: list, missing: list, time_minutes: int = 30) -> dict:
+    available = clean_string_list(have)
+    missing_items = clean_string_list(missing)
+    main_items = ", ".join(available[:5]) or "your available ingredients"
+    hero_item = available[0] if available else meal_name or "main ingredient"
+    secondary_items = ", ".join(available[1:4]) if len(available) > 1 else "any vegetables or pantry staples you have"
+    missing_text = ", ".join(missing_items[:3])
+    try:
+        cook_time = int(time_minutes)
+    except (TypeError, ValueError):
+        cook_time = 30
+    prep_time = max(5, min(12, cook_time // 3))
+    active_time = max(10, cook_time - prep_time)
+    steps = [
+        f"Set out {main_items}, a cutting board, knife, measuring spoon, skillet or saucepan, and a serving bowl. Pat wet ingredients dry so they brown instead of steaming.",
+        f"Spend about {prep_time} minutes prepping: cut {hero_item} into even bite-size pieces, slice or mince {secondary_items}, and keep fast-cooking items separate from firm ones.",
+        "Warm 1-2 tablespoons oil or butter in the pan over medium heat for 60-90 seconds. The fat should shimmer, but it should not smoke.",
+        "Cook aromatics or firm vegetables first with a pinch of salt for 3-5 minutes, stirring every 30 seconds, until softened and lightly golden at the edges.",
+        f"Add {hero_item} and spread it into a single layer. Let it sit undisturbed for 1-2 minutes before stirring so it develops color and deeper flavor.",
+        f"Fold in the remaining ingredients and cook for {max(5, active_time // 2)}-{max(8, active_time // 2 + 4)} minutes, adjusting heat between medium-low and medium so the pan sizzles gently.",
+        "Season in layers: add salt, pepper, acid such as lemon or vinegar, and a little sauce or spice. Taste, then adjust until it tastes balanced rather than flat.",
+        "Finish off heat for 2 minutes so the food settles. Add a small splash of water, broth, or milk only if it looks dry, then plate while warm.",
+    ]
+    if missing_text:
+        steps.insert(2, f"For the missing {missing_text}, choose the closest match: beans or eggs for protein, frozen vegetables for greens, or broth plus spices for sauce.")
+    return {
+        "steps": steps,
+        "tips": [
+            "If the food tastes dull, add acid first, then salt.",
+            "If anything browns too quickly, lower the heat and add one tablespoon of water.",
+            "Keep pieces similar in size so the texture feels intentional.",
+        ],
+        "servings": "2-4 servings",
+    }
+
+
+def _normalize_step(item) -> str | None:
+    _skip = {"none", "n/a", "-", ""}
+    if isinstance(item, dict):
+        action = str(item.get("action", "")).strip()
+        if not action:
+            return None
+        parts = [action.rstrip(".")]
+        meta = []
+        if (heat := str(item.get("heat", "")).strip().lower()) and heat not in _skip:
+            meta.append(f"{item['heat']} heat")
+        if (t := str(item.get("time", "")).strip().lower()) and t not in _skip:
+            meta.append(str(item["time"]))
+        if meta:
+            parts[0] += f" ({', '.join(meta)})"
+        if (cue := str(item.get("cue", "")).strip()) and cue.lower() not in _skip:
+            parts.append(f"Look for: {cue.rstrip('.')}.")
+        if (step_tips := str(item.get("tips", "")).strip()) and step_tips.lower() not in _skip:
+            parts.append(f"Tip: {step_tips.rstrip('.')}.")
+        return " ".join(parts)
+    if isinstance(item, str):
+        return re.sub(r"^Step\s*\d+[:.]\s*", "", item).strip() or None
+    return None
+
+
+def normalize_recipe(data: dict, meal_name: str, have: list, missing: list, time_minutes: int) -> dict:
+    raw_steps = data.get("steps", []) if isinstance(data, dict) else []
+    steps = [s for item in raw_steps if (s := _normalize_step(item)) is not None]
+    tips = clean_string_list(data.get("tips", [])) if isinstance(data, dict) else []
+    servings = str(data.get("servings", "2-4 servings")).strip() if isinstance(data, dict) else "2-4 servings"
+    avg_words = sum(len(s.split()) for s in steps) / max(len(steps), 1)
+    if len(steps) < 5 or avg_words < 10:
+        return fallback_recipe_steps(meal_name, have, missing, time_minutes)
+    return {
+        "steps": steps,
+        "tips": tips,
+        "servings": servings or "2-4 servings",
+    }
+
+
+def normalize_pantries(data: dict) -> dict:
+    pantries = []
+    seen = set()
+    for pantry in data.get("pantries", []) if isinstance(data, dict) else []:
+        if not isinstance(pantry, dict):
+            continue
+        name = str(pantry.get("name", "")).strip()
+        address = str(pantry.get("address") or pantry.get("street_address", "")).strip()
+        if not name or not address:
+            continue
+        key = (name.lower(), address.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        raw_lat = pantry.get("lat") if pantry.get("lat") is not None else pantry.get("latitude")
+        raw_lng = pantry.get("lng") if pantry.get("lng") is not None else pantry.get("longitude")
+        try:
+            lat = float(raw_lat)
+            lng = float(raw_lng)
+        except (TypeError, ValueError):
+            lat = None
+            lng = None
+        pantries.append({
+            "name": name,
+            "address": address,
+            "phone": str(pantry.get("phone") or pantry.get("phone_number", "")).strip(),
+            "hours": str(pantry.get("hours") or pantry.get("public_hours", "Call to confirm hours")).strip() or "Call to confirm hours",
+            "notes": str(pantry.get("notes") or pantry.get("note", "")).strip(),
+            "lat": lat,
+            "lng": lng,
+        })
+    return {"pantries": pantries}
 
 
 # ─── API Routes ───────────────────────────────────────────────────────────────
+
+def parse_coordinates(value: str):
+    match = re.search(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", str(value or ""))
+    if not match:
+        return None
+    lat = float(match.group(1))
+    lng = float(match.group(2))
+    if -90 <= lat <= 90 and -180 <= lng <= 180:
+        return lat, lng
+    return None
+
+
+def distance_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    radius = 3958.8
+    p1 = math.radians(lat1)
+    p2 = math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+async def geocode_location(location: str):
+    coords = parse_coordinates(location)
+    if coords:
+        return coords
+    if not str(location).strip():
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            resp = await client.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": location, "format": "json", "limit": 1},
+                headers={"User-Agent": "FridgeBridge-HackDavis2026/1.0"},
+            )
+            resp.raise_for_status()
+            results = resp.json()
+            if results:
+                return float(results[0]["lat"]), float(results[0]["lon"])
+    except Exception as e:
+        print(f"Nominatim geocode error: {e}", flush=True)
+    return None
+
+
+def pantry_from_osm_element(element: dict, origin):
+    tags = element.get("tags", {})
+    name = str(tags.get("name", "")).strip()
+    searchable = " ".join(
+        str(tags.get(key, ""))
+        for key in ("name", "amenity", "social_facility", "description", "operator")
+    ).lower()
+    keywords = ("food", "pantry", "bank", "soup", "meal", "kitchen", "hunger", "community cupboard")
+    if not name or not any(keyword in searchable for keyword in keywords):
+        return None
+
+    lat = element.get("lat") or element.get("center", {}).get("lat")
+    lng = element.get("lon") or element.get("center", {}).get("lon")
+    if lat is None or lng is None:
+        return None
+    lat = float(lat)
+    lng = float(lng)
+    address_parts = [
+        tags.get("addr:housenumber"),
+        tags.get("addr:street"),
+        tags.get("addr:city"),
+        tags.get("addr:state"),
+        tags.get("addr:postcode"),
+    ]
+    address = " ".join(str(part).strip() for part in address_parts if part)
+    if not address:
+        address = tags.get("addr:full") or f"{lat:.5f}, {lng:.5f}"
+    notes = tags.get("description") or tags.get("operator") or ""
+    if origin:
+        miles = distance_miles(origin[0], origin[1], lat, lng)
+        notes = f"{notes} {miles:.1f} miles away".strip()
+    return {
+        "name": name,
+        "address": address,
+        "phone": str(tags.get("phone") or tags.get("contact:phone") or "").strip(),
+        "hours": str(tags.get("opening_hours") or "Call to confirm hours").strip(),
+        "notes": notes,
+        "lat": lat,
+        "lng": lng,
+    }
+
+
+async def find_osm_pantries(location: str, coords=None, radius_m: int = 16000) -> dict:
+    origin = coords or await geocode_location(location)
+    if not origin:
+        return {"pantries": []}
+    lat, lng = origin
+    query = f"""
+    [out:json][timeout:12];
+    (
+      node["social_facility"~"food_bank|soup_kitchen"](around:{radius_m},{lat},{lng});
+      way["social_facility"~"food_bank|soup_kitchen"](around:{radius_m},{lat},{lng});
+      relation["social_facility"~"food_bank|soup_kitchen"](around:{radius_m},{lat},{lng});
+      node["name"~"food pantry|food bank|soup kitchen|community cupboard|free food",i](around:{radius_m},{lat},{lng});
+      way["name"~"food pantry|food bank|soup kitchen|community cupboard|free food",i](around:{radius_m},{lat},{lng});
+      relation["name"~"food pantry|food bank|soup kitchen|community cupboard|free food",i](around:{radius_m},{lat},{lng});
+    );
+    out center tags 40;
+    """
+    try:
+        async with httpx.AsyncClient(timeout=18) as client:
+            resp = await client.post(
+                "https://overpass-api.de/api/interpreter",
+                data={"data": query},
+                headers={"User-Agent": "FridgeBridge-HackDavis2026/1.0"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        print(f"Overpass pantry search error: {e}", flush=True)
+        return {"pantries": []}
+
+    pantries = []
+    for element in data.get("elements", []):
+        pantry = pantry_from_osm_element(element, origin)
+        if pantry:
+            pantries.append(pantry)
+    return normalize_pantries({"pantries": pantries})
+
+
+def merge_pantry_lists(*lists: list) -> list:
+    merged = []
+    seen = set()
+    for pantries in lists:
+        for pantry in pantries or []:
+            name = str(pantry.get("name", "")).strip()
+            address = str(pantry.get("address", "")).strip()
+            if not name or not address:
+                continue
+            key = (name.lower(), address.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(pantry)
+    return merged
+
 
 @app.get("/")
 def root():
@@ -188,17 +728,20 @@ async def suggest_meals(request: Request):
 
     extra = f"\n\nThe user specifically wants: {specific_request}. Prioritize this." if specific_request else ""
 
-    result = await call_claude(
-        [{"role": "user", "content": f"""Given these ingredients: {json.dumps(ingredients)}{extra}
-Suggest 3-5 meals. For each, list what they have and what's missing.
-Return ONLY JSON: {{"meals": [{{"name": "...", "description": "...", "have": [...], "missing": [...], "difficulty": "easy|medium|hard", "time_minutes": 30}}]}}"""}],
-        system="Helpful cooking assistant for budget-friendly meals. Return only JSON."
-    )
-
     try:
-        data = parse_json(result)
-    except:
-        data = {"meals": []}
+        result = await call_claude(
+            [{"role": "user", "content": f"""Given these ingredients: {json.dumps(ingredients)}{extra}
+Suggest exactly 6 practical meals. Keep each description under 18 words.
+For each meal, list ingredients the user already has and important missing ingredients."""}],
+            system="Helpful cooking assistant for budget-friendly meals. Return only JSON.",
+            max_tokens=2048,
+            json_mode=True,
+            response_schema=MEALS_SCHEMA,
+        )
+        data = normalize_meals(parse_json(result))
+    except Exception as e:
+        print(f"Gemini meal suggestion error: {e}", flush=True)
+        data = fallback_meals(ingredients, specific_request)
 
     if session_id in sessions:
         sessions[session_id]["meals"] = data.get("meals", [])
@@ -210,19 +753,42 @@ async def find_pantries(request: Request):
     body = await request.json()
     location = body.get("location", "")
     session_id = body.get("session_id", "")
-
-    result = await call_claude(
-        [{"role": "user", "content": f"""Find real food pantries, food banks near {location}. Need 3-5 with phone numbers.
-Return ONLY JSON: {{"pantries": [{{"name": "...", "address": "...", "phone": "+1XXXXXXXXXX", "hours": "...", "notes": "...", "lat": 0.0, "lng": 0.0}}]}}
-Include lat/lng coordinates for mapping."""}],
-        system="Social services assistant. Find real food resources. Return only JSON.",
-        max_tokens=2048,
-    )
+    coords = None
+    if isinstance(body.get("coords"), dict):
+        try:
+            coords = (float(body["coords"]["lat"]), float(body["coords"]["lng"]))
+        except (KeyError, TypeError, ValueError):
+            coords = None
+    coords = coords or parse_coordinates(location)
+    osm_data = await find_osm_pantries(location, coords)
+    local_pantries = osm_data.get("pantries", [])
 
     try:
-        data = parse_json(result)
-    except:
-        data = {"pantries": []}
+        local_context = json.dumps(local_pantries[:8])
+        coordinate_context = f"{coords[0]},{coords[1]}" if coords else location
+        result = await call_claude(
+            [{"role": "user", "content": f"""Find 3-5 real food pantries, food banks, or community food distribution sites near {location}.
+Use this coordinate/location as the center of the search: {coordinate_context}.
+Known local candidates from OpenStreetMap: {local_context}
+For each result include name, street address, phone number if available, public hours if available, a short note, latitude, and longitude.
+Prefer local organizations near the provided coordinate over broad regional directories. Return only JSON with a top-level pantries array."""}],
+            system="Social services assistant. Use Google Search to verify real food resources. Return only JSON.",
+            max_tokens=2048,
+            json_mode=False,
+            use_google_search=True,
+        )
+        gemini_data = normalize_pantries(parse_json(result))
+        ai_pantries = gemini_data.get("pantries", [])
+        # geocode any AI-returned pantries that are missing coordinates
+        for p in ai_pantries:
+            if p.get("lat") is None or p.get("lng") is None:
+                resolved = await geocode_location(p.get("address", ""))
+                if resolved:
+                    p["lat"], p["lng"] = resolved
+        data = {"pantries": merge_pantry_lists(local_pantries, ai_pantries)[:6]}
+    except Exception as e:
+        print(f"AI pantry lookup error: {e}", flush=True)
+        data = {"pantries": local_pantries[:6]}
 
 
     # ✅ Add this — prepend your demo pantry
@@ -235,7 +801,7 @@ Include lat/lng coordinates for mapping."""}],
         "lat": 38.5382,
         "lng": -121.7617
     }
-    data["pantries"] = [demo_pantry] + data.get("pantries", [])
+    data["pantries"] = merge_pantry_lists(data.get("pantries", []), [demo_pantry])
 
 
     if session_id in sessions:
@@ -392,35 +958,50 @@ async def recipe_steps(request: Request):
     missing = body.get("missing", [])
     time_minutes = body.get("time_minutes", 30)
 
-    result = await call_claude(
-        [{"role": "user", "content": f"""Provide detailed step-by-step cooking instructions for: {meal_name}
+    try:
+        result = await call_claude(
+            [{"role": "user", "content": f"""Provide sophisticated but beginner-readable cooking instructions for: {meal_name}
 Ingredients available: {json.dumps(have)}
 Missing ingredients (note substitutions if possible): {json.dumps(missing)}
-Return ONLY JSON: {{"steps": ["Step 1: ...", "Step 2: ..."], "tips": ["tip1", "tip2"], "servings": "2-4 servings"}}"""}],
-        system="Expert chef. Write clear, beginner-friendly numbered steps. Be specific with quantities and techniques. Return only JSON.",
-        max_tokens=1500,
-    )
-    try:
-        return parse_json(result)
-    except:
-        return {"steps": [result], "tips": [], "servings": "2-4 servings"}
+Target cooking time: about {time_minutes} minutes.
+
+Requirements:
+- Return 6-9 steps.
+- Each step should be specific enough to cook from: include heat level, approximate minutes, visual or texture cues, and when to stir/taste.
+- Use approximate quantities where helpful, such as 1-2 tbsp oil, a pinch of salt, or 1/4 cup water.
+- Include substitutions for missing ingredients inside the relevant step.
+- Avoid vague lines like "cook until done", "prepare ingredients", or "season to taste" unless you explain how and what to look for.
+- Include 2-3 concise general cooking tips in the top-level tips field (e.g., common mistakes to avoid, helpful techniques, or storage and serving ideas)."""}],
+            system="Expert chef. Write polished, practical, sensory step-by-step cooking instructions. Return only JSON with steps, tips, and servings.",
+            max_tokens=2600,
+            json_mode=True,
+            response_schema=RECIPE_SCHEMA,
+        )
+        data = parse_json(result)
+        return normalize_recipe(data, meal_name, have, missing, time_minutes)
+    except Exception as e:
+        print(f"Gemini recipe steps error: {e}", flush=True)
+        return fallback_recipe_steps(meal_name, have, missing, time_minutes)
 
 
 @app.post("/api/optimize-plan")
 async def optimize_plan(request: Request):
     body = await request.json()
-    result = await call_claude(
-        [{"role": "user", "content": f"""Given food pantry results, create optimal pickup plan.
+    try:
+        result = await call_claude(
+            [{"role": "user", "content": f"""Given food pantry results, create optimal pickup plan.
 Meal: {body.get('selected_meal', '')}
 Location: {body.get('user_location', '')}
 Results: {json.dumps(body.get('call_results', []))}
-Return ONLY JSON: {{"plan": [{{"pantry_name": "...", "address": "...", "items_to_get": [...], "visit_order": 1}}], "still_missing": [...], "recipe_modifications": "...", "summary": "..."}}"""}],
-        system="Logistics optimizer. Return only JSON."
-    )
-    try:
+Return a practical plan ordered by likely convenience and item coverage."""}],
+            system="Logistics optimizer. Return only JSON.",
+            json_mode=True,
+            response_schema=PLAN_SCHEMA,
+        )
         return parse_json(result)
-    except:
-        return {"plan": [], "still_missing": [], "recipe_modifications": "", "summary": result}
+    except Exception as e:
+        print(f"Gemini optimize plan error: {e}", flush=True)
+        return {"plan": [], "still_missing": [], "recipe_modifications": "", "summary": "Could not generate a pickup plan yet."}
 
 
 # ─── Demo mode ────────────────────────────────────────────────────────────────

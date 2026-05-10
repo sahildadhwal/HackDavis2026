@@ -52,7 +52,7 @@ interface Plan {
   summary: string;
 }
 
-export function PantryPal() {
+export function FridgeBridge() {
   const [step, setStep] = useState(0);
   const [sessionId, setSessionId] = useState("");
   const [image, setImage] = useState<File | null>(null);
@@ -250,7 +250,7 @@ export function PantryPal() {
       {/* Header */}
       <header className="bg-gradient-to-br from-green-800 to-green-900 px-5 py-6 text-white">
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <span className="text-3xl">🥫</span> PantryPal
+          <span className="text-3xl">🥫</span> FridgeBridge
         </h1>
         <p className="text-green-200 text-sm mt-1">AI-powered food pantry coordinator</p>
       </header>
